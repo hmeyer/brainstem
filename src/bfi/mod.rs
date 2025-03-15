@@ -37,26 +37,26 @@ mod tests {
     }
 
     #[test]
-    fn adds() {
+    fn increments() {
         assert_eq!(
             &format!("{:?}", ProgramParser::new().parse("+").unwrap()),
-            "[AddValue(1)]"
+            "[Increment(1)]"
         );
         assert_eq!(
             &format!("{:?}", ProgramParser::new().parse("++").unwrap()),
-            "[AddValue(2)]"
+            "[Increment(2)]"
         );
         assert_eq!(
             &format!("{:?}", ProgramParser::new().parse("-").unwrap()),
-            "[AddValue(-1)]"
+            "[Increment(-1)]"
         );
         assert_eq!(
             &format!("{:?}", ProgramParser::new().parse("---").unwrap()),
-            "[AddValue(-3)]"
+            "[Increment(-3)]"
         );
         assert_eq!(
             &format!("{:?}", ProgramParser::new().parse("+-+-+").unwrap()),
-            "[AddValue(1)]"
+            "[Increment(1)]"
         );
         assert_eq!(
             &format!("{:?}", ProgramParser::new().parse("+-").unwrap()),
@@ -79,7 +79,10 @@ mod tests {
             "[SetToZero]"
         );
         assert_eq!(
-            &format!("{:?}", ProgramParser::new().parse("+-+-+[-]").unwrap()),
+            &format!(
+                "{:?}",
+                ProgramParser::new().parse("+>-+<-+[-+-+-]").unwrap()
+            ),
             "[SetToZero]"
         );
     }
@@ -108,5 +111,32 @@ mod tests {
         );
         assert!(ProgramParser::new().parse("[").is_err());
         assert!(ProgramParser::new().parse("]").is_err());
+    }
+
+    #[test]
+    fn compact() {
+        assert_eq!(
+            &format!("{:?}", ProgramParser::new().parse("+<>-").unwrap()),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn non_bf_and_comments() {
+        assert_eq!(
+            &format!(
+                "{:?}",
+                ProgramParser::new()
+                    .parse(
+                        "This is a comment Then move right >
+            then a line break: left: <
+            + & -
+            zero:[With-Comments]
+            done"
+                    )
+                    .unwrap()
+            ),
+            "[SetToZero]"
+        );
     }
 }

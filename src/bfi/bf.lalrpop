@@ -1,24 +1,35 @@
 use lalrpop_util::ParseError;
-use crate::bfi::ast::{Op, match_jumps};
+use crate::bfi::ast::{Op, finalize};
 
 grammar;
 
 Terminal: Op = {
-    r"[<>]+" => Op::MovePointer(<>.chars().map(|c| match c { '>' => 1, '<' => -1, _ => panic!()}).sum()),
-    r"[\+\-]+" => Op::AddValue(<>.chars().map(|c| match c { '+' => 1, '-' => -1, _ => panic!()}).sum()),
+    ">" => Op::MovePointer(1),
+    "<" => Op::MovePointer(-1),
+    "+" => Op::Increment(1),
+    "-" => Op::Increment(-1),
     "[" => Op::JumpIfNotZero(0),
     "]" => Op::JumpBack(0),
     "," => Op::Read,
     "." => Op::Write,
-    r"[\+\-]*\[\-\]" => Op::SetToZero,
 };
 
 pub Program : Vec<Op> = {
     <v:Terminal*> =>? {
-        match_jumps(
-            v.into_iter().filter(|o| match o { Op::MovePointer(i) => *i != 0, Op::AddValue(i) => *i != 0, _ => true}).collect()
-        ).map_err(|e| ParseError::User {
+        finalize(v).map_err(|e| ParseError::User {
             error: e
         })
     }
+}
+
+match {
+    ">",
+    "<",
+    "+",
+    "-",
+    "[",
+    "]",
+    ",",
+    ".",
+    r"[^<>\+\-\[\]\,\.]*" => { },  // Ignore any non-bf characters.
 }
