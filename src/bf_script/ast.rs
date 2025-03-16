@@ -1,5 +1,14 @@
 use std::fmt::{Debug, Error, Formatter};
 
+pub enum Statement<'input> {
+    VarDeclaration(&'input str, Vec<Expression<'input>>),
+    If(Expression<'input>, Box<Statement<'input>>),
+    PutChar(Expression<'input>),
+    While(Expression<'input>, Box<Statement<'input>>),
+    Block(Vec<Statement<'input>>),
+    Expression(Expression<'input>),
+}
+
 pub enum Expression<'input> {
     Literal(i32),
     Unary(Opcode, Box<Expression<'input>>),

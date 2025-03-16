@@ -1,7 +1,25 @@
 use std::str::FromStr;
-use crate::bf_script::ast::{Expression, Opcode};
+use crate::bf_script::ast::{Expression, Opcode, Statement};
+use lalrpop_util::ParseError;
 
 grammar;
+
+pub Statement: Statement<'input> = {
+    "VAR" <i:Identifier> <b:r"(\[\])?"> "=" <mut h: (<Expression> ",")*> <t:Expression?> ";" =>? {
+        match t {
+            None => {}
+            Some(e) => h.push(e)
+        };
+        if h.len() >= 1 && b != "[]" {
+            return Err(ParseError::User{error:"Multi-value initializer requires array declaration."})
+        }
+        Ok(Statement::VarDeclaration(i, h))
+    },
+    "{" <s:Statement+> "}" => Statement::Block(s),
+
+};
+
+Identifier = r"[a-zA-Z_]\w*";
 
 pub Expression: Expression<'input> = {
     <l:Expression> <op:r"[\+\-]"> <r:Factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
