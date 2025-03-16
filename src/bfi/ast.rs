@@ -6,9 +6,9 @@ pub enum Op {
     /// Increment the value at the current cell by n - corresponds to '+' and '-'.
     Increment(i32),
     /// Jump to the instruction after the matching ']' if the current cell is zero - corresponds to '['.
-    JumpIfNotZero(usize),
+    JumpIfZero(usize),
     /// Jump back to the instruction after the matching '[' if the current cell is not zero - corresponds to ']'.
-    JumpBack(isize),
+    JumpBack(usize),
     /// Read a byte from the standard input and store it in the current cell - corresponds to ','.
     Read,
     /// Write the byte at the current cell to the standard output - corresponds to '.'.
@@ -57,7 +57,7 @@ fn optimize_set_to_zero(mut program: Vec<Op>) -> Vec<Op> {
     let mut i = 0;
     while i + 2 < program.len() {
         match program[i..i + 3] {
-            [Op::JumpIfNotZero(_), Op::Increment(-1), Op::JumpBack(_)] => {
+            [Op::JumpIfZero(_), Op::Increment(-1), Op::JumpBack(_)] => {
                 program[i] = Op::SetToZero;
                 program.remove(i + 1);
                 program.remove(i + 1);
@@ -84,14 +84,14 @@ fn match_jumps(mut program: Vec<Op>) -> Result<Vec<Op>, &'static str> {
     let mut jumps = Vec::new();
     for i in 0..program.len() {
         match program[i] {
-            Op::JumpIfNotZero(_) => jumps.push(i),
+            Op::JumpIfZero(_) => jumps.push(i),
             Op::JumpBack(_) => {
                 if jumps.is_empty() {
                     return Err("Unmatched ']'");
                 }
                 let jnz = jumps.pop().unwrap();
-                program[jnz] = Op::JumpIfNotZero(i);
-                program[i] = Op::JumpBack(jnz as isize - 1);
+                program[jnz] = Op::JumpIfZero(i + 1);
+                program[i] = Op::JumpBack(jnz);
             }
             _ => (),
         }
