@@ -89,9 +89,9 @@ fn match_jumps(mut program: Vec<Op>) -> Result<Vec<Op>, &'static str> {
                 if jumps.is_empty() {
                     return Err("Unmatched ']'");
                 }
-                let jnz = jumps.pop().unwrap();
-                program[jnz] = Op::JumpIfZero(i + 1);
-                program[i] = Op::JumpBack(jnz);
+                let jz = jumps.pop().unwrap();
+                program[jz] = Op::JumpIfZero(i + 1);
+                program[i] = Op::JumpBack(jz);
             }
             _ => (),
         }
