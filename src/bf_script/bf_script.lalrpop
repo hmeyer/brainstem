@@ -1,0 +1,23 @@
+use std::str::FromStr;
+use crate::bf_script::ast::{Expression, Opcode};
+
+grammar;
+
+pub Expression: Expression<'input> = {
+    <l:Expression> <op:r"[\+\-]"> <r:Factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+    Factor,
+};
+
+Factor: Expression<'input> = {
+    <l:Factor> <op:r"[\*\/]"> <r:Term> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+    Term,
+};
+
+Term: Expression<'input> = {
+    Literal,
+    "(" <Expression> ")",
+};
+
+Literal: Expression<'input> = {
+    r"[0-9]+" => Expression::Literal(i32::from_str(<>).unwrap()),
+}
