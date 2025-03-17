@@ -9,6 +9,32 @@ pub enum Statement<'input> {
     Expression(Expression<'input>),
 }
 
+impl Debug for Statement<'_> {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
+        use self::Statement::*;
+        match *self {
+            VarDeclaration(n, ref i) => {
+                if i.len() == 1 {
+                    write!(fmt, "var {} = {:?};", n, i[0])
+                } else {
+                    write!(fmt, "var {}[] = {:?};", n, i)
+                }
+            }
+            If(ref c, ref s) => write!(fmt, "if ({:?}) then {:?};", c, s),
+            PutChar(ref e) => write!(fmt, "putchar({:?});", e),
+            While(ref c, ref s) => write!(fmt, "while ({:?}) do {:?};", c, s),
+            Block(ref v) => {
+                write!(fmt, "{{\n")?;
+                for s in v {
+                    write!(fmt, "{:?}\n", s)?;
+                }
+                write!(fmt, "}}\n")
+            }
+            Expression(ref e) => write!(fmt, "{:?};", e),
+        }
+    }
+}
+
 pub enum Expression<'input> {
     Literal(i32),
     Unary(Opcode, Box<Expression<'input>>),

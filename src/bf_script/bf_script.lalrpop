@@ -4,38 +4,44 @@ use lalrpop_util::ParseError;
 
 grammar;
 
-pub Statement: Statement<'input> = {
-    "VAR" <i:Identifier> <b:r"(\[\])?"> "=" <mut h: (<Expression> ",")*> <t:Expression?> ";" =>? {
-        match t {
-            None => {}
-            Some(e) => h.push(e)
-        };
-        if h.len() >= 1 && b != "[]" {
-            return Err(ParseError::User{error:"Multi-value initializer requires array declaration."})
-        }
-        Ok(Statement::VarDeclaration(i, h))
+pub Program : Vec<Statement<'input>> = {
+    <v:statement*> => v
+}
+
+statement: Statement<'input> = {
+    var_declaration,
+    "{" <s:statement+> "}" => Statement::Block(s),
+};
+
+var_declaration: Statement<'input> = {
+    "var" <n:identifier> "=" <i: expression> ";" => Statement::VarDeclaration(n, vec![i]),
+    "var" <n:identifier> "[" "]" "=" "[" <mut i: (<expression> ",")+> <t:expression> "]" ";" => {
+        i.push(t);
+        Statement::VarDeclaration(n, i)
     },
-    "{" <s:Statement+> "}" => Statement::Block(s),
-
+//    "var" <n:identifier> "[" "]" "=" "\"" <i:"foo"> "\"" ";" =>
+//        Statement::VarDeclaration(n, i.chars().map(|c| Expression::Literal(c as i32)).collect()),
 };
 
-Identifier = r"[a-zA-Z_]\w*";
+identifier = r"[a-zA-Z_]\w*";
 
-pub Expression: Expression<'input> = {
-    <l:Expression> <op:r"[\+\-]"> <r:Factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
-    Factor,
+
+
+pub expression: Expression<'input> = {
+    <l:expression> <op:r"[\+\-]"> <r:factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+    factor,
 };
 
-Factor: Expression<'input> = {
-    <l:Factor> <op:r"[\*\/]"> <r:Term> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
-    Term,
+factor: Expression<'input> = {
+    <l:factor> <op:r"[\*\/]"> <r:term> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+    term,
 };
 
-Term: Expression<'input> = {
-    Literal,
-    "(" <Expression> ")",
+term: Expression<'input> = {
+    literal,
+    "(" <expression> ")",
 };
 
-Literal: Expression<'input> = {
+literal: Expression<'input> = {
     r"[0-9]+" => Expression::Literal(i32::from_str(<>).unwrap()),
 }
