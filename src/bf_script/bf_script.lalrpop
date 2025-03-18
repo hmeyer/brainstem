@@ -4,44 +4,65 @@ use lalrpop_util::ParseError;
 
 grammar;
 
-pub Program : Vec<Statement<'input>> = {
-    <v:statement*> => v
+
+match {
+    r"[0-9]+" => NUMBER,
+    r"[\+\-]" => ADDSUB,
+    r"[\*\/]" => MULDIV,
+    r"[a-zA-Z_]\w*" => ID,
+    r#""[^"]*""# => STRING,
+
+    _, 
+
+    // Skip whitespace and comments
+    r"\s*" => { },
+    r"//[^\n\r]*[\n\r]*" => { }, // `// comment`
+    r"/\*([^\*]*\*+[^\*/])*([^\*]*\*+|[^\*])*\*/" => { }, // `/* comment */`
 }
 
-statement: Statement<'input> = {
-    var_declaration,
-    "{" <s:statement+> "}" => Statement::Block(s),
+pub Program : Vec<Statement<'input>> = {
+    <Statement*>,
+}
+
+Statement: Statement<'input> = {
+    VarDeclaration,
+    "{" <s:Statement+> "}" => Statement::Block(s),
 };
 
-var_declaration: Statement<'input> = {
-    "var" <n:identifier> "=" <i: expression> ";" => Statement::VarDeclaration(n, vec![i]),
-    "var" <n:identifier> "[" "]" "=" "[" <mut i: (<expression> ",")+> <t:expression> "]" ";" => {
+VarDeclaration: Statement<'input> = {
+    "var" <n:Identifier> "=" <i: Expression> ";" => Statement::VarDeclaration(n, vec![i]),
+    "var" <n:Identifier> "[" "]" "=" "[" <mut i: (<Expression> ",")+> <t:Expression> "]" ";" => {
         i.push(t);
         Statement::VarDeclaration(n, i)
     },
-//    "var" <n:identifier> "[" "]" "=" "\"" <i:"foo"> "\"" ";" =>
-//        Statement::VarDeclaration(n, i.chars().map(|c| Expression::Literal(c as i32)).collect()),
+    "var" <n:Identifier> "[" "]" "=" <i:StringLiteral> ";" =>
+        Statement::VarDeclaration(n, i.chars().map(|c| Expression::Literal(c as i32)).collect()),
 };
 
-identifier = r"[a-zA-Z_]\w*";
+StringLiteral: &'input str = {
+    <l:STRING> => l[1..l.len() -1].into()
+}
 
-
-
-pub expression: Expression<'input> = {
-    <l:expression> <op:r"[\+\-]"> <r:factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
-    factor,
+Expression: Expression<'input> = {
+    <l:Expression> <op:ADDSUB> <r:Factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+    Factor,
 };
 
-factor: Expression<'input> = {
-    <l:factor> <op:r"[\*\/]"> <r:term> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
-    term,
+Factor: Expression<'input> = {
+    <l:Factor> <op:MULDIV> <r:Primary> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+    Primary,
 };
 
-term: Expression<'input> = {
-    literal,
-    "(" <expression> ")",
+
+pub Primary: Expression<'input> = {
+    Literal,
+    Identifier => Expression::Variable(<>),
+    <n:Identifier> "[" <i:Expression> "]" => Expression::IndexedVariable(n, Box::new(i)),
+    "(" <Expression> ")",
 };
 
-literal: Expression<'input> = {
-    r"[0-9]+" => Expression::Literal(i32::from_str(<>).unwrap()),
+Identifier = ID;
+
+Literal: Expression<'input> = {
+    NUMBER => Expression::Literal(i32::from_str(<>).unwrap()),
 }

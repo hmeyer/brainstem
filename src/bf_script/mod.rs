@@ -35,10 +35,10 @@ mod tests {
             format!(
                 "{:?}",
                 ProgramParser::new()
-                    .parse("var multi[] = \"foo\";")
+                    .parse("var multi[] = \"Foo\";")
                     .unwrap()
             ),
-            "[var multi[] = [1, 2, 3];]"
+            "[var multi[] = [70, 111, 111];]"
         );
     }
 }

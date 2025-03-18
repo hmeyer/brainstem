@@ -24,11 +24,11 @@ impl Debug for Statement<'_> {
             PutChar(ref e) => write!(fmt, "putchar({:?});", e),
             While(ref c, ref s) => write!(fmt, "while ({:?}) do {:?};", c, s),
             Block(ref v) => {
-                write!(fmt, "{{\n")?;
+                writeln!(fmt, "{{")?;
                 for s in v {
-                    write!(fmt, "{:?}\n", s)?;
+                    writeln!(fmt, "{:?}", s)?;
                 }
-                write!(fmt, "}}\n")
+                writeln!(fmt, "}}")
             }
             Expression(ref e) => write!(fmt, "{:?};", e),
         }
