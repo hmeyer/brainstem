@@ -53,12 +53,19 @@ pub enum Expression<'input> {
 pub enum Opcode {
     Mul,
     Div,
+    Mod,
     Add,
     Sub,
     Not,
     And,
     Or,
     Xor,
+    Gt,
+    Ge,
+    Lt,
+    Le,
+    Eq,
+    Ne,
 }
 
 impl From<&str> for Opcode {
@@ -66,11 +73,19 @@ impl From<&str> for Opcode {
         match op {
             "*" => Opcode::Mul,
             "/" => Opcode::Div,
+            "%" => Opcode::Mod,
             "+" => Opcode::Add,
             "-" => Opcode::Sub,
             "&" => Opcode::And,
             "|" => Opcode::Or,
             "^" => Opcode::Xor,
+            "!" => Opcode::Not,
+            ">" => Opcode::Gt,
+            ">=" => Opcode::Ge,
+            "<" => Opcode::Lt,
+            "<=" => Opcode::Le,
+            "==" => Opcode::Eq,
+            "!=" => Opcode::Ne,
             _ => panic!("Unsupported operator: {}", op),
         }
     }
@@ -97,12 +112,19 @@ impl Debug for Opcode {
         match *self {
             Mul => write!(fmt, "*"),
             Div => write!(fmt, "/"),
+            Mod => write!(fmt, "%"),
             Add => write!(fmt, "+"),
             Sub => write!(fmt, "-"),
             Not => write!(fmt, "-"),
             And => write!(fmt, "&"),
             Or => write!(fmt, "|"),
             Xor => write!(fmt, "^"),
+            Gt => write!(fmt, ">"),
+            Ge => write!(fmt, ">="),
+            Lt => write!(fmt, "<"),
+            Le => write!(fmt, "<="),
+            Eq => write!(fmt, "=="),
+            Ne => write!(fmt, "!="),
         }
     }
 }

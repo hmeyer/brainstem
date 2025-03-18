@@ -7,8 +7,6 @@ grammar;
 
 match {
     r"[0-9]+" => NUMBER,
-    r"[\+\-]" => ADDSUB,
-    r"[\*\/]" => MULDIV,
     r"[a-zA-Z_]\w*" => ID,
     r#""[^"]*""# => STRING,
 
@@ -43,26 +41,67 @@ StringLiteral: &'input str = {
     <l:STRING> => l[1..l.len() -1].into()
 }
 
-Expression: Expression<'input> = {
-    <l:Expression> <op:ADDSUB> <r:Factor> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
-    Factor,
+Expression = Assignment;
+
+Assignment: Expression<'input> = {
+    <n:Identifier> <i:("[" <Expression> "]")?> "=" <v:LogicOr> => match i {
+        Some(index) => Expression::IndexedAssignment(n, Box::new(index), Box::new(v)),
+        None => Expression::Assignment(n, Box::new(v)),
+    },
+    LogicOr,
+}
+
+LogicOr: Expression<'input> = {
+    <l:Equality> <o:"|"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    LogicAnd,
+}
+
+LogicAnd: Expression<'input> = {
+    <l:Equality> <o:"&"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    Equality,
+}
+
+Equality: Expression<'input> = {
+    <l:Comparison> <o:"!="> <r:Comparison> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Comparison> <o:"=="> <r:Comparison> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    Comparison,
+}
+
+Comparison: Expression<'input> = {
+    <l:Addition> <o:">"> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Addition> <o:">="> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Addition> <o:"<"> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Addition> <o:"<="> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    Addition,
 };
 
-Factor: Expression<'input> = {
-    <l:Factor> <op:MULDIV> <r:Primary> => Expression::Binary(Box::new(l), op.into(), Box::new(r)),
+Addition: Expression<'input> = {
+    <l:Multiplication> <o:"+"> <r:Multiplication> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Multiplication> <o:"-"> <r:Multiplication> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    Multiplication,
+};
+
+Multiplication: Expression<'input> = {
+    <l:Unary> <o:"*"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Unary> <o:"/"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Unary> <o:"%"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    Unary,
+};
+
+Unary: Expression<'input> = {
+    <o:"!"> <e:Unary> => Expression::Unary(o.into(), Box::new(e)),
+    <o:"-"> <e:Unary> => Expression::Unary(o.into(), Box::new(e)),
     Primary,
-};
+}
 
 
-pub Primary: Expression<'input> = {
-    Literal,
-    Identifier => Expression::Variable(<>),
-    <n:Identifier> "[" <i:Expression> "]" => Expression::IndexedVariable(n, Box::new(i)),
+Primary: Expression<'input> = {
+    NUMBER => Expression::Literal(i32::from_str(<>).unwrap()),
+    <n:Identifier> <i:("[" <Expression> "]")?> => match i {
+        None => Expression::Variable(n),
+        Some(index) => Expression::IndexedVariable(n, Box::new(index))
+    },
     "(" <Expression> ")",
 };
 
 Identifier = ID;
-
-Literal: Expression<'input> = {
-    NUMBER => Expression::Literal(i32::from_str(<>).unwrap()),
-}
