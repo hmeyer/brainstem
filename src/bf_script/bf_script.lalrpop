@@ -52,12 +52,12 @@ Assignment: Expression<'input> = {
 }
 
 LogicOr: Expression<'input> = {
-    <l:Equality> <o:"|"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:LogicAnd> <o:"||"> <r:LogicAnd> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     LogicAnd,
 }
 
 LogicAnd: Expression<'input> = {
-    <l:Equality> <o:"&"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Equality> <o:"&&"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     Equality,
 }
 

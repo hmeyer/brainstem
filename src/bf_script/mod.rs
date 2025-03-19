@@ -41,4 +41,20 @@ mod tests {
             "[var multi[] = [70, 111, 111];]"
         );
     }
+
+    #[test]
+    fn logic_expressions() {
+        assert_eq!(
+            format!("{:?}", ProgramParser::new().parse("var x = !foo && bar || 2;").unwrap()),
+            "[var x = (((!foo) && bar) || 2);]"
+        );
+    }
+
+    #[test]
+    fn arithmetic_expressions() {
+        assert_eq!(
+            format!("{:?}", ProgramParser::new().parse("var x = 2 + 3 / 4 + 2;").unwrap()),
+            "[var x = 2 + 3 / 4 + 2;]"
+        );
+    }
 }
