@@ -72,7 +72,7 @@ where
                 output.write_all(&[value])?;
             }
             Op::JumpIfZero(n) => {
-                if memory.get(&mp).unwrap_or(&T::zero()) == &T::zero() {
+                if memory.get(&mp).unwrap_or(&zero) == &zero {
                     ip = *n;
                 }
             }
