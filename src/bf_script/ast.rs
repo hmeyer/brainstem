@@ -96,7 +96,7 @@ impl Debug for Expression<'_> {
         use self::Expression::*;
         match *self {
             Literal(n) => write!(fmt, "{}", n),
-            Unary(op, ref e) => write!(fmt, "({:?}{:?})", op, e),
+            Unary(op, ref e) => write!(fmt, "{:?}{:?}", op, e),
             Binary(ref l, op, ref r) => write!(fmt, "({:?} {:?} {:?})", l, op, r),
             Variable(s) => write!(fmt, "{}", s),
             IndexedVariable(s, ref e) => write!(fmt, "{}[{:?}]", s, e),

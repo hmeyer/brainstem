@@ -52,45 +52,46 @@ Assignment: Expression<'input> = {
 }
 
 LogicOr: Expression<'input> = {
-    <l:LogicAnd> <o:"||"> <r:LogicAnd> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:LogicOr> <o:"||"> <r:LogicAnd> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     LogicAnd,
 }
 
 LogicAnd: Expression<'input> = {
-    <l:Equality> <o:"&&"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:LogicAnd> <o:"&&"> <r:Equality> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     Equality,
 }
 
 Equality: Expression<'input> = {
-    <l:Comparison> <o:"!="> <r:Comparison> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Comparison> <o:"=="> <r:Comparison> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Equality> <o:"!="> <r:Comparison> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Equality> <o:"=="> <r:Comparison> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     Comparison,
 }
 
 Comparison: Expression<'input> = {
-    <l:Addition> <o:">"> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Addition> <o:">="> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Addition> <o:"<"> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Addition> <o:"<="> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Comparison> <o:">"> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Comparison> <o:">="> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Comparison> <o:"<"> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Comparison> <o:"<="> <r:Addition> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     Addition,
 };
 
 Addition: Expression<'input> = {
-    <l:Multiplication> <o:"+"> <r:Multiplication> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Multiplication> <o:"-"> <r:Multiplication> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Addition> <o:"+"> <r:Multiplication> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Addition> <o:"-"> <r:Multiplication> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     Multiplication,
 };
 
 Multiplication: Expression<'input> = {
-    <l:Unary> <o:"*"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Unary> <o:"/"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Unary> <o:"%"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Multiplication> <o:"*"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Multiplication> <o:"/"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Multiplication> <o:"%"> <r:Unary> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
     Unary,
 };
 
 Unary: Expression<'input> = {
     <o:"!"> <e:Unary> => Expression::Unary(o.into(), Box::new(e)),
     <o:"-"> <e:Unary> => Expression::Unary(o.into(), Box::new(e)),
+    <o:"+"> <e:Unary> => e,
     Primary,
 }
 

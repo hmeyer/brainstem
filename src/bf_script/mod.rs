@@ -43,18 +43,52 @@ mod tests {
     }
 
     #[test]
-    fn logic_expressions() {
+    fn unary_expressions() {
         assert_eq!(
-            format!("{:?}", ProgramParser::new().parse("var x = !foo && bar || 2;").unwrap()),
-            "[var x = (((!foo) && bar) || 2);]"
+            format!("{:?}", ProgramParser::new().parse("var x = !--+3;").unwrap()),
+            "[var x = !--3;]"
         );
     }
 
     #[test]
+    fn muliplication_expressions() {
+        assert_eq!(
+            format!("{:?}", ProgramParser::new().parse("var x = 3 * 4 * foo;").unwrap()),
+            "[var x = ((3 * 4) * foo);]"
+        );
+    }
+
+
+    #[test]
     fn arithmetic_expressions() {
         assert_eq!(
-            format!("{:?}", ProgramParser::new().parse("var x = 2 + 3 / 4 + 2;").unwrap()),
-            "[var x = 2 + 3 / 4 + 2;]"
+            format!("{:?}", ProgramParser::new().parse("var x = 3 + 4 * foo;").unwrap()),
+            "[var x = (3 + (4 * foo));]"
+        );
+    }
+
+
+    #[test]
+    fn logic_expressions() {
+        assert_eq!(
+            format!("{:?}", ProgramParser::new().parse("var x = !foo && bar || 2;").unwrap()),
+            "[var x = ((!foo && bar) || 2);]"
+        );
+    }
+
+    #[test]
+    fn equality_expressions() {
+        assert_eq!(
+            format!("{:?}", ProgramParser::new().parse("var x = 2 == 3 != 4;").unwrap()),
+            "[var x = ((2 == 3) != 4);]"
+        );
+    }
+
+    #[test]
+    fn complex_expressions() {
+        assert_eq!(
+            format!("{:?}", ProgramParser::new().parse("var x = 1 + 2 * 3 || 4 > (3 + 2) - !foo;").unwrap()),
+            "[var x = ((1 + (2 * 3)) || (4 > ((3 + 2) - !foo)));]"
         );
     }
 }
