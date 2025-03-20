@@ -3,24 +3,29 @@ mod ast;
 use anyhow::Result;
 use ast::Op;
 use lalrpop_util::lalrpop_mod;
+use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
 use std::collections::HashMap;
 use std::io::{Cursor, Read, Write};
 
 lalrpop_mod!(parser, "/bfi/bf.rs");
 
-pub fn run_program(
+pub fn run_program<T>(
     program: &str,
     input: &mut impl Read,
     output: &mut impl Write,
     max_steps: Option<usize>,
-) -> Result<()> {
+) -> Result<()>
+where
+    T: PrimInt + FromPrimitive + ToPrimitive,
+{
     let ops = parser::ProgramParser::new()
         .parse(program)
-        .map_err(|e| anyhow::anyhow!(format!("{:}", e)))?;
-    let mut memory = HashMap::new();
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let mut memory: HashMap<isize, T> = HashMap::new();
     let mut ip: usize = 0;
     let mut mp: isize = 0;
     let mut steps = 0;
+    let zero = T::zero();
     while ip < ops.len() && (max_steps.is_none() || steps < max_steps.unwrap()) {
         let op = &ops[ip];
         ip += 1;
@@ -30,25 +35,44 @@ pub fn run_program(
                 mp += n;
             }
             Op::Increment(n) => {
-                let cell = memory.entry(mp).or_insert(0);
-                *cell += *n;
+                let cell = memory.entry(mp).or_insert(T::zero());
+                let increment = T::from_i32(*n).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Conversion error: could not convert increment value {} to target type",
+                        n
+                    )
+                })?;
+                *cell = *cell + increment;
             }
             Op::Read => {
                 let mut buf = [0; 1];
                 let len = input.read(&mut buf)?;
                 if len == 1 {
-                    memory.insert(mp, buf[0] as i32);
+                    memory.insert(
+                        mp,
+                        T::from_u8(buf[0]).ok_or_else(|| {
+                            anyhow::anyhow!("Conversion error from u8 to target type")
+                        })?,
+                    );
                 } else {
-                    // EOF
-                    memory.insert(mp, -1);
+                    // EOF: insert -1 into memory
+                    memory.insert(
+                        mp,
+                        T::from_i32(-1).ok_or_else(|| {
+                            anyhow::anyhow!("Conversion error from i32 to target type")
+                        })?,
+                    );
                 }
             }
             Op::Write => {
-                let cell = memory.get(&mp).unwrap_or(&0);
-                output.write_all(&[*cell as u8])?;
+                let cell = memory.get(&mp).unwrap_or(&zero);
+                let value = cell
+                    .to_u8()
+                    .ok_or_else(|| anyhow::anyhow!("Conversion error to u8"))?;
+                output.write_all(&[value])?;
             }
             Op::JumpIfZero(n) => {
-                if memory.get(&mp).unwrap_or(&0) == &0 {
+                if memory.get(&mp).unwrap_or(&T::zero()) == &T::zero() {
                     ip = *n;
                 }
             }
@@ -56,22 +80,25 @@ pub fn run_program(
                 ip = *n;
             }
             Op::SetToZero => {
-                memory.insert(mp, 0);
+                memory.insert(mp, T::zero());
             }
         }
     }
     Ok(())
 }
 
-pub fn run_program_from_str(
+pub fn run_program_from_str<T>(
     program: &str,
     input: &str,
     max_steps: Option<usize>,
-) -> Result<String> {
+) -> Result<String>
+where
+    T: PrimInt + FromPrimitive + ToPrimitive,
+{
     let mut reader = Cursor::new(input.as_bytes());
     let mut output_buffer = Vec::new();
     let mut writer = Cursor::new(&mut output_buffer);
-    run_program(program, &mut reader, &mut writer, max_steps)?;
+    run_program::<T>(program, &mut reader, &mut writer, max_steps)?;
     Ok(String::from_utf8(output_buffer).unwrap())
 }
 
@@ -216,12 +243,12 @@ mod tests {
 
     #[test]
     fn run_hello_world() {
-        assert_eq!(run_program_from_str("++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.", "", Some(1000)).unwrap(), "Hello World!\n");
+        assert_eq!(run_program_from_str::<i32>("++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.", "", Some(1000)).unwrap(), "Hello World!\n");
     }
 
     #[test]
     fn run_rot13() {
-        assert_eq!(run_program_from_str(r"#
+        assert_eq!(run_program_from_str::<i32>(r"#
 From: Wikipedia/Brainfuck
 -,+[                         Read first character and start outer character reading loop
     -[                       Skip forward if character is 0
@@ -256,6 +283,8 @@ From: Wikipedia/Brainfuck
 
     #[test]
     fn run_with_parse_error() {
-        assert!(run_program("[", &mut std::io::empty(), &mut std::io::empty(), None).is_err());
+        assert!(
+            run_program::<i32>("[", &mut std::io::empty(), &mut std::io::empty(), None).is_err()
+        );
     }
 }
