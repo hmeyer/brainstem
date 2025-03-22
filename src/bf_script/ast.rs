@@ -25,8 +25,8 @@ impl Debug for Statement<'_> {
                 }
             }
             If(ref c, ref t, ref e) => match e {
-                Some(e) => write!(fmt, "if ({:?}) then {{{:?}}} else {{{:?}}};", c, t, e),
-                None => write!(fmt, "if ({:?}) then {{{:?}}};", c, t),
+                Some(e) => write!(fmt, "if {:?} then {:?} else {:?};", c, t, e),
+                None => write!(fmt, "if {:?} then {:?};", c, t),
             },
             PutChar(ref e) => write!(fmt, "putchar({:?});", e),
             While(ref c, ref s) => write!(fmt, "while ({:?}) do {:?};", c, s),
