@@ -28,14 +28,14 @@ impl Debug for Statement<'_> {
                 Some(e) => write!(fmt, "if {:?} then {:?} else {:?};", c, t, e),
                 None => write!(fmt, "if {:?} then {:?};", c, t),
             },
-            PutChar(ref e) => write!(fmt, "putchar({:?});", e),
-            While(ref c, ref s) => write!(fmt, "while ({:?}) do {:?};", c, s),
+            PutChar(ref e) => write!(fmt, "putc({:?});", e),
+            While(ref c, ref s) => write!(fmt, "while ({:?}) {:?}", c, s),
             Block(ref v) => {
                 writeln!(fmt, "{{")?;
                 for s in v {
                     writeln!(fmt, "{:?}", s)?;
                 }
-                writeln!(fmt, "}}")
+                write!(fmt, "}}")
             }
             Expression(ref e) => write!(fmt, "{:?};", e),
         }

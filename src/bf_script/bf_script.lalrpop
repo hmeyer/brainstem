@@ -25,10 +25,10 @@ pub Program : Vec<Statement<'input>> = {
 Statement: Statement<'input> = {
     "{" <s:Statement+> "}" => Statement::Block(s),
     VarDeclaration,
-    "if" <c:Expression> "then" "{" <t:Statement+> "}" <e:("else" "{" <Statement+> "}")?> => 
+    "if" <c:Expression> "then" "{" <t:Statement*> "}" <e:("else" "{" <Statement*> "}")?> => 
         Statement::If(c, Box::new(Statement::Block(t)), e.map(Statement::Block).map(Box::new)),
     "putc" "(" <Expression> ")" ";" => Statement::PutChar(<>),
-    "while" "(" <c:Expression> ")" <b:Statement> => Statement::While(c, Box::new(b)),
+    "while" <c:Expression> "{" <b:Statement*> "}" => Statement::While(c, Box::new(Statement::Block(b))),
     <Expression> ";" => Statement::Expression(<>),
 };
 

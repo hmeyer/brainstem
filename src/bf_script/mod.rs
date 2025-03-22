@@ -120,10 +120,9 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("if x then { var y = 2; } else { var z = 3; }").unwrap()
             ),
-            "[if x then {\nvar y = 2;\n}\n else {\nvar z = 3;\n}\n;]"
+            "[if x then {\nvar y = 2;\n} else {\nvar z = 3;\n};]"
         );
     }
-
 
     #[test]
     fn if_nested() {
@@ -132,7 +131,29 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("if (x) then { if (y) then { 2; } } else { var z = 3; }").unwrap()
             ),
-            "[if x then {\nif y then {\n2;\n}\n;\n}\n else {\nvar z = 3;\n}\n;]"
+            "[if x then {\nif y then {\n2;\n};\n} else {\nvar z = 3;\n};]"
+        );
+    }
+
+    #[test]
+    fn putc() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new().parse("putc(foo + bar);").unwrap()
+            ),
+            "[putc((foo + bar));]"
+        );
+    }
+
+    #[test]
+    fn test_while() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new().parse("while foo / bar { x; }").unwrap()
+            ),
+            "[while ((foo / bar)) {\nx;\n}]"
         );
     }
 }
