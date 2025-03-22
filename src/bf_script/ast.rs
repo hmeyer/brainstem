@@ -2,7 +2,11 @@ use std::fmt::{Debug, Error, Formatter};
 
 pub enum Statement<'input> {
     VarDeclaration(&'input str, Vec<Expression<'input>>),
-    If(Expression<'input>, Box<Statement<'input>>),
+    If(
+        Expression<'input>,
+        Box<Statement<'input>>,
+        Option<Box<Statement<'input>>>,
+    ),
     PutChar(Expression<'input>),
     While(Expression<'input>, Box<Statement<'input>>),
     Block(Vec<Statement<'input>>),
@@ -20,7 +24,10 @@ impl Debug for Statement<'_> {
                     write!(fmt, "var {}[] = {:?};", n, i)
                 }
             }
-            If(ref c, ref s) => write!(fmt, "if ({:?}) then {:?};", c, s),
+            If(ref c, ref t, ref e) => match e {
+                Some(e) => write!(fmt, "if ({:?}) then {{{:?}}} else {{{:?}}};", c, t, e),
+                None => write!(fmt, "if ({:?}) then {{{:?}}};", c, t),
+            },
             PutChar(ref e) => write!(fmt, "putchar({:?});", e),
             While(ref c, ref s) => write!(fmt, "while ({:?}) do {:?};", c, s),
             Block(ref v) => {
