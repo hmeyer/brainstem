@@ -1,4 +1,5 @@
 mod ast;
+mod runtime;
 
 use anyhow::Result;
 use lalrpop_util::lalrpop_mod;
@@ -79,7 +80,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn var_declaration() {
         assert_eq!(
@@ -118,7 +118,9 @@ mod tests {
         assert_eq!(
             format!(
                 "{:?}",
-                ProgramParser::new().parse("if x then { var y = 2; } else { var z = 3; }").unwrap()
+                ProgramParser::new()
+                    .parse("if x then { var y = 2; } else { var z = 3; }")
+                    .unwrap()
             ),
             "[if x then {\nvar y = 2;\n} else {\nvar z = 3;\n};]"
         );
@@ -129,7 +131,9 @@ mod tests {
         assert_eq!(
             format!(
                 "{:?}",
-                ProgramParser::new().parse("if (x) then { if (y) then { 2; } } else { var z = 3; }").unwrap()
+                ProgramParser::new()
+                    .parse("if (x) then { if (y) then { 2; } } else { var z = 3; }")
+                    .unwrap()
             ),
             "[if x then {\nif y then {\n2;\n};\n} else {\nvar z = 3;\n};]"
         );
@@ -151,7 +155,9 @@ mod tests {
         assert_eq!(
             format!(
                 "{:?}",
-                ProgramParser::new().parse("while foo / bar { x; }").unwrap()
+                ProgramParser::new()
+                    .parse("while foo / bar { x; }")
+                    .unwrap()
             ),
             "[while ((foo / bar)) {\nx;\n}]"
         );
