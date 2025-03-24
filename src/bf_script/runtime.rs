@@ -109,7 +109,7 @@ mod tests {
         let mut context = Context::new();
         let _v1 = context.add("var1", 4);
         {
-            let _v2 = context.add("var2", 2);
+            let _v2 = context.add_temp(2);
 
             assert_eq!(context.find_next_free(3), 6); // Address after var2
         }
