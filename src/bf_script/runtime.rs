@@ -42,8 +42,7 @@ impl Context {
             address,
             size,
         });
-        self.variables
-            .insert(name, Rc::downgrade(&variable));
+        self.variables.insert(name, Rc::downgrade(&variable));
         variable
     }
 
