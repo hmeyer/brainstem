@@ -34,22 +34,19 @@ impl Context {
         variable
     }
 
-    pub fn find_next_free(&self, size: usize) -> isize {
+    pub fn find_next_free(&mut self, size: usize) -> isize {
+        self.cleanup_stale();
         let top_address = self
             .variables
             .values()
-            .map(|v| v.upgrade())
-            .filter(|v| v.is_some())
-            .map(|v| v.unwrap())
+            .map(|v| v.upgrade().unwrap())
             .map(|v| v.address + v.size as isize)
             .max()
             .unwrap_or(0);
         let used_addresses: HashSet<isize> = self
             .variables
             .values()
-            .map(|v| v.upgrade())
-            .filter(|v| v.is_some())
-            .map(|v| v.unwrap())
+            .map(|v| v.upgrade().unwrap())
             .map(|v| v.address..v.address + v.size as isize)
             .flat_map(|r| r)
             .collect();
@@ -71,7 +68,7 @@ impl Context {
     }
 
     pub fn cleanup_stale(&mut self) {
-        self.variables.retain(|_, v| v.upgrade().is_some());
+        self.variables.retain(|_, v| v.strong_count() > 0);
     }
 }
 
@@ -97,9 +94,9 @@ mod tests {
     #[test]
     fn test_find_next_free() {
         let mut context = Context::new();
-        let v1 = context.add("var1", 4);
+        let _v1 = context.add("var1", 4);
         {
-            let v2 = context.add("var2", 2);
+            let _v2 = context.add("var2", 2);
 
             assert_eq!(context.find_next_free(3), 6); // Address after var2
         }
