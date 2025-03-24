@@ -34,6 +34,19 @@ impl Context {
         variable
     }
 
+    pub fn add_temp(&mut self, size: usize) -> Rc<Variable> {
+        let address = self.find_next_free(size);
+        let name = format!("__temp{}", address);
+        let variable = Rc::new(Variable {
+            name: name.clone(),
+            address,
+            size,
+        });
+        self.variables
+            .insert(name, Rc::downgrade(&variable));
+        variable
+    }
+
     pub fn find_next_free(&mut self, size: usize) -> isize {
         self.cleanup_stale();
         let top_address = self
