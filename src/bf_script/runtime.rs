@@ -1,9 +1,9 @@
-use anyhow::{Result, anyhow};
+use super::ast;
+use anyhow::{Result, anyhow, bail};
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
-use super::ast;
 
 #[derive(Debug)]
 pub struct Variable {
@@ -120,25 +120,34 @@ impl ContextExt for Rc<RefCell<Context>> {
     }
 }
 
-
 static VALID_BF_CHARS: &str = "+-<>[],.";
-
 
 #[derive(Debug)]
 enum Item {
+    MoveTo(isize),
     Verbatim(String),
-    Indent,
-    Dedent,
+    Indent(usize),
+    NewLine,
 }
+
+struct Indent();
 
 #[derive(Debug)]
 struct Emitter {
     items: Vec<Item>,
+    indents: Vec<Weak<Indent>>,
 }
 
 impl Emitter {
     pub fn new() -> Self {
-        Self { items: Vec::new() }
+        Self {
+            items: Vec::new(),
+            indents: Vec::new(),
+        }
+    }
+
+    pub fn move_to(&mut self, address: &Variable) {
+        self.items.push(Item::MoveTo(address.address));
     }
 
     pub fn add_code(&mut self, code: String) -> Result<()> {
@@ -157,28 +166,66 @@ impl Emitter {
         Ok(())
     }
 
+    pub fn add_indent_comment_newline(&mut self, comment: String) -> Result<Rc<Indent>> {
+        let i = self.indent();
+        self.add_comment(comment)?;
+        self.newline();
+        Ok(i)
+    }
+
+    pub fn indent(&mut self) -> Rc<Indent> {
+        let indent = Rc::new(Indent());
+        self.indents.push(Rc::downgrade(&indent));
+        self.items.push(Item::Indent(self.indents.len()));
+        indent
+    }
+
+    pub fn newline(&mut self) {
+        self.indents.retain(|x| x.strong_count() > 0);
+        self.items.push(Item::Indent(self.indents.len()));
+        self.items.push(Item::NewLine);
+    }
+
     pub fn emit(&self) -> String {
         let mut indent = 0;
         static INDENTATION: &str = "  ";
-        self.items
-            .iter()
-            .map(|item| match item {
-                Item::Verbatim(code) => Some(INDENTATION.repeat(indent) + code),
-                Item::Indent => {
-                    indent += 1;
-                    None
+        let mut address = 0;
+        let mut is_on_new_line = true;
+        let mut pieces = Vec::new();
+        for item in &self.items {
+            match item {
+                Item::MoveTo(_) | Item::Verbatim(_) => {
+                    if is_on_new_line {
+                        is_on_new_line = false;
+                        // Everything is indented by 1 at least, so we subtract 1.
+                        pieces.push(INDENTATION.repeat(0.max(indent - 1)));
+                    }
+                    match item {
+                        Item::MoveTo(new_address) => {
+                            let diff = new_address - address;
+                            address = *new_address;
+                            if diff > 0 {
+                                pieces.push(">".repeat(diff as usize));
+                            } else if diff < 0 {
+                                pieces.push("<".repeat(-diff as usize));
+                            }
+                        }
+                        Item::Verbatim(code) => pieces.push(code.clone()),
+                        _ => unreachable!(),
+                    }
                 }
-                Item::Dedent => {
-                    indent -= 1;
-                    None
+                Item::Indent(i) => {
+                    indent = *i;
                 }
-            }).filter(|x| x.is_some())
-            .map(|x| x.unwrap())
-            .collect()
+                Item::NewLine => {
+                    pieces.push("\n".to_string());
+                    is_on_new_line = true;
+                }
+            }
+        }
+        pieces.into_iter().collect()
     }
 }
-
-
 
 #[derive(Debug)]
 struct Runtime {
@@ -197,83 +244,98 @@ impl Runtime {
     }
 
     fn compile_expression(&mut self, expr: &ast::Expression) -> Result<Rc<Variable>> {
-        let t = self.context.add_temp()?;
-        match expr {
-            ast::Expression::Literal(_) => {
-                // Allocate space for the literal.
-            }
-            ast::Expression::Unary(_, expr) => {
-                // Compile the expression.
-            }
-            ast::Expression::Binary(lhs, _, rhs) => {
-                // Compile the left-hand side.
-                // Compile the right-hand side.
-            }
-            ast::Expression::Variable(name) => {
-                // Look up the variable in the context.
-            }
-            ast::Expression::IndexedVariable(name, index) => {
-                // Compile the index expression.
-                // Look up the variable in the context.
-            }
-            ast::Expression::Assignment(name, expr) => {
-                // Compile the expression.
-                // Look up the variable in the context.
-            }
-            ast::Expression::IndexedAssignment(name, index, expr) => {
-                // Compile the index expression.
-                // Compile the expression.
-                // Look up the variable in the context.
-            }
+        let r;
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline(format!("{:?}", expr))?;
+            r = match expr {
+                ast::Expression::Literal(l) => {
+                    let result = self.context.add_temp()?;
+                    self.emitter.move_to(&result);
+                    self.emitter.add_code("+".repeat(*l as usize))?;
+                    Ok(result)
+                }
+                ast::Expression::Unary(opcode, expr) => {
+                    match opcode {
+                        &ast::Opcode::Not => {
+                            let x = self.compile_expression(expr)?;
+                            let t = self.context.add_temp()?;
+                            self.emitter.move_to(&t);
+                            self.emitter.add_code("[-]+".into())?;
+                            self.emitter.move_to(&x);
+                            self.emitter.add_code("[-".into())?;
+                            self.emitter.move_to(&t);
+                            self.emitter.add_code("-".into())?;
+                            self.emitter.move_to(&x);
+                            self.emitter.add_code("]".into())?;
+                            self.emitter.move_to(&t);
+                            self.emitter.add_code("[".into())?;
+                            self.emitter.move_to(&x);
+                            self.emitter.add_code("+".into())?;
+                            self.emitter.move_to(&t);
+                            self.emitter.add_code("-]".into())?;
+                            Ok(x)
+                        }
+                        &ast::Opcode::Sub => self.compile_expression(&ast::Expression::Binary(
+                            Box::new(ast::Expression::Literal(0)),
+                            ast::Opcode::Sub,
+                            expr.clone(),
+                        )),
+                        _ => Err(anyhow!("Unary {:?} not implemented", opcode)),
+                    }
+                    // Compile the expression.
+                }
+                ast::Expression::Binary(lhs, _, rhs) => {
+                    Err(anyhow!("Binary expressions not implemented"))
+                }
+                ast::Expression::Variable(name) => {
+                    Err(anyhow!("Variable expressions not implemented"))
+                }
+                ast::Expression::IndexedVariable(name, index) => {
+                    Err(anyhow!("IndexedVariable expressions not implemented"))
+                }
+                ast::Expression::Assignment(name, expr) => {
+                    Err(anyhow!("Assignment expressions not implemented"))
+                }
+                ast::Expression::IndexedAssignment(name, index, expr) => {
+                    Err(anyhow!("IndexedAssignment expressions not implemented"))
+                }
+            };
         }
-        Ok(t)
-    }
-
-    fn move_to(&mut self, v: &Variable) -> Result<()> {
-        let diff = v.address - self.current_address;
-        if diff > 0 {
-            self.emitter.add_code("+".repeat(diff as usize))?;
-        } else if diff < 0 {
-            self.emitter.add_code("-".repeat(-diff as usize))?;
-        }
-        self.current_address = v.address;
-        Ok(())
+        self.emitter.newline();
+        r
     }
 
     pub fn compile(&mut self, statement: &ast::Statement) -> Result<()> {
+        let _indent = self
+            .emitter
+            .add_indent_comment_newline(format!("{:?}", statement))?;
         match statement {
             ast::Statement::VarDeclaration(name, size) => {
-                // let var = self.context.add(name, size.len())?;
-                // for (i, expr) in size.iter().enumerate() {
-                //     // Compile the expression and store the result in the variable.
-                // }
+                bail!("VarDeclaration statement not implemented");
             }
             ast::Statement::If(cond, then, else_) => {
-                // Compile the condition.
-                // Compile the then branch.
-                // Compile the else branch if it exists.
+                bail!("If statement not implemented");
             }
             ast::Statement::PutChar(expr) => {
                 let e = self.compile_expression(expr)?;
-                self.move_to(&e)?;
+                self.emitter.move_to(&e);
                 self.emitter.add_code(".".into())?;
             }
             ast::Statement::While(cond, body) => {
-                // Compile the condition.
-                // Compile the body.
+                bail!("While statement not implemented");
             }
             ast::Statement::Block(statements) => {
-                // Compile each statement in the block.
+                bail!("Block statement not implemented");
             }
             ast::Statement::Expression(expr) => {
-                // Compile the expression.
+                bail!("Expression statement not implemented");
             }
         }
         Ok(())
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -311,5 +373,21 @@ mod tests {
         }
         // var2 goes out of scope
         assert_eq!(ctx.add_temp().unwrap().address, 4); // Address after var1
+    }
+
+    #[test]
+    fn test_putc_literal() {
+        let mut runtime = Runtime::new();
+        let expr = ast::Expression::Literal(3);
+        runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
+        assert_eq!(runtime.emitter.emit(), "putc(3);\n  3\n  +++\n.");
+    }
+
+    #[test]
+    fn test_putc_not_2() {
+        let mut runtime = Runtime::new();
+        let expr = ast::Expression::Unary(ast::Opcode::Not, Box::new(ast::Expression::Literal(2)));
+        runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
+        assert_eq!(runtime.emitter.emit(), "putc(!2);\n  !2\n    2\n    ++\n  >[-]+<[->-<]>[<+>-]\n<.");
     }
 }

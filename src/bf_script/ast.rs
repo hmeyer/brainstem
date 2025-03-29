@@ -42,6 +42,7 @@ impl Debug for Statement<'_> {
     }
 }
 
+#[derive(Clone)]
 pub enum Expression<'input> {
     Literal(i32),
     Unary(Opcode, Box<Expression<'input>>),
