@@ -146,11 +146,18 @@ impl Emitter {
         }
     }
 
+    fn update_indent(&mut self) {
+        self.indents.retain(|x| x.strong_count() > 0);
+        self.items.push(Item::Indent(self.indents.len()));
+    }
+
     pub fn move_to(&mut self, address: &Variable) {
+        self.update_indent();
         self.items.push(Item::MoveTo(address.address));
     }
 
     pub fn add_code(&mut self, code: String) -> Result<()> {
+        self.update_indent();
         if code.chars().any(|c| !VALID_BF_CHARS.contains(c)) {
             return Err(anyhow!("Invalid character in code: {}", code));
         }
@@ -159,6 +166,7 @@ impl Emitter {
     }
 
     pub fn add_comment(&mut self, comment: String) -> Result<()> {
+        self.update_indent();
         if comment.chars().any(|c| VALID_BF_CHARS.contains(c)) {
             return Err(anyhow!("Code character in comment: {}", comment));
         }
@@ -181,8 +189,6 @@ impl Emitter {
     }
 
     pub fn newline(&mut self) {
-        self.indents.retain(|x| x.strong_count() > 0);
-        self.items.push(Item::Indent(self.indents.len()));
         self.items.push(Item::NewLine);
     }
 
@@ -234,6 +240,23 @@ struct Runtime {
     emitter: Emitter,
 }
 
+macro_rules! bf {
+    ($emitter:expr; $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; $($rest)*); emitter.newline(); };
+}
+
+macro_rules! bf_impl {
+    ($emitter:expr; $v:ident $($rest:tt)*) => {let mut emitter=$emitter; emitter.move_to(&$v); bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; + $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("+".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; - $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("-".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; . $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(".".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; , $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(",".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; .. $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; . . $($rest)*); };
+    ($emitter:expr; [ $($body:tt)* ] $($rest:tt)* ) => {
+        let mut emitter=$emitter; emitter.add_code("[".into())?; bf_impl!(&mut emitter; $($body)*); emitter.add_code("]".into())?; bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; ) => { };
+}
+
 impl Runtime {
     pub fn new() -> Self {
         Self {
@@ -244,67 +267,49 @@ impl Runtime {
     }
 
     fn compile_expression(&mut self, expr: &ast::Expression) -> Result<Rc<Variable>> {
-        let r;
-        {
-            let _indent = self
-                .emitter
-                .add_indent_comment_newline(format!("{:?}", expr))?;
-            r = match expr {
-                ast::Expression::Literal(l) => {
-                    let result = self.context.add_temp()?;
-                    self.emitter.move_to(&result);
-                    self.emitter.add_code("+".repeat(*l as usize))?;
-                    Ok(result)
-                }
-                ast::Expression::Unary(opcode, expr) => {
-                    match opcode {
-                        &ast::Opcode::Not => {
-                            let x = self.compile_expression(expr)?;
-                            let t = self.context.add_temp()?;
-                            self.emitter.move_to(&t);
-                            self.emitter.add_code("[-]+".into())?;
-                            self.emitter.move_to(&x);
-                            self.emitter.add_code("[-".into())?;
-                            self.emitter.move_to(&t);
-                            self.emitter.add_code("-".into())?;
-                            self.emitter.move_to(&x);
-                            self.emitter.add_code("]".into())?;
-                            self.emitter.move_to(&t);
-                            self.emitter.add_code("[".into())?;
-                            self.emitter.move_to(&x);
-                            self.emitter.add_code("+".into())?;
-                            self.emitter.move_to(&t);
-                            self.emitter.add_code("-]".into())?;
-                            Ok(x)
-                        }
-                        &ast::Opcode::Sub => self.compile_expression(&ast::Expression::Binary(
-                            Box::new(ast::Expression::Literal(0)),
-                            ast::Opcode::Sub,
-                            expr.clone(),
-                        )),
-                        _ => Err(anyhow!("Unary {:?} not implemented", opcode)),
+        let _indent = self
+            .emitter
+            .add_indent_comment_newline(format!("{:?}", expr))?;
+        match expr {
+            ast::Expression::Literal(l) => {
+                let result = self.context.add_temp()?;
+                self.emitter.move_to(&result);
+                self.emitter.add_code("+".repeat(*l as usize))?;
+                self.emitter.newline();
+                Ok(result)
+            }
+            ast::Expression::Unary(opcode, expr) => {
+                match opcode {
+                    &ast::Opcode::Not => {
+                        let x = self.compile_expression(expr)?;
+                        let t = self.context.add_temp()?;
+                        bf!(&mut self.emitter; t[-]+ );
+                        bf!(&mut self.emitter; x[-t-x]t[x+t-] );
+                        Ok(x)
                     }
-                    // Compile the expression.
+                    &ast::Opcode::Sub => self.compile_expression(&ast::Expression::Binary(
+                        Box::new(ast::Expression::Literal(0)),
+                        ast::Opcode::Sub,
+                        expr.clone(),
+                    )),
+                    _ => Err(anyhow!("Unary {:?} not implemented", opcode)),
                 }
-                ast::Expression::Binary(lhs, _, rhs) => {
-                    Err(anyhow!("Binary expressions not implemented"))
-                }
-                ast::Expression::Variable(name) => {
-                    Err(anyhow!("Variable expressions not implemented"))
-                }
-                ast::Expression::IndexedVariable(name, index) => {
-                    Err(anyhow!("IndexedVariable expressions not implemented"))
-                }
-                ast::Expression::Assignment(name, expr) => {
-                    Err(anyhow!("Assignment expressions not implemented"))
-                }
-                ast::Expression::IndexedAssignment(name, index, expr) => {
-                    Err(anyhow!("IndexedAssignment expressions not implemented"))
-                }
-            };
+                // Compile the expression.
+            }
+            ast::Expression::Binary(lhs, _, rhs) => {
+                Err(anyhow!("Binary expressions not implemented"))
+            }
+            ast::Expression::Variable(name) => Err(anyhow!("Variable expressions not implemented")),
+            ast::Expression::IndexedVariable(name, index) => {
+                Err(anyhow!("IndexedVariable expressions not implemented"))
+            }
+            ast::Expression::Assignment(name, expr) => {
+                Err(anyhow!("Assignment expressions not implemented"))
+            }
+            ast::Expression::IndexedAssignment(name, index, expr) => {
+                Err(anyhow!("IndexedAssignment expressions not implemented"))
+            }
         }
-        self.emitter.newline();
-        r
     }
 
     pub fn compile(&mut self, statement: &ast::Statement) -> Result<()> {
@@ -388,6 +393,9 @@ mod tests {
         let mut runtime = Runtime::new();
         let expr = ast::Expression::Unary(ast::Opcode::Not, Box::new(ast::Expression::Literal(2)));
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
-        assert_eq!(runtime.emitter.emit(), "putc(!2);\n  !2\n    2\n    ++\n  >[-]+<[->-<]>[<+>-]\n<.");
+        assert_eq!(
+            runtime.emitter.emit(),
+            "putc(!2);\n  !2\n    2\n    ++\n  >[-]+\n  <[->-<]>[<+>-]\n<."
+        );
     }
 }
