@@ -303,6 +303,7 @@ impl Runtime {
             ast::Expression::Literal(l) => {
                 let result = self.context.add_temp()?;
                 self.emitter.move_to(&result);
+                self.emitter.add_code("[-]".into())?;
                 self.emitter.add_code("+".repeat(*l as usize))?;
                 self.emitter.newline();
                 Ok(result)
@@ -386,6 +387,34 @@ impl Runtime {
                     let y = self.wrap_temp(y)?;
                     bf!(&mut self.emitter; y[-x-y] );
                     Ok(x)
+                }
+                &ast::Opcode::And => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let y = self.wrap_temp(y)?;
+                    let z = self.context.add_temp()?;
+                    bf!(&mut self.emitter;
+                        z[-]
+                        x[
+                            y[z+y-]
+                            x-
+                        ]
+                    );
+                    Ok(z)
+                }
+                &ast::Opcode::Or => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let y = self.wrap_temp(y)?;
+                    let z = self.context.add_temp()?;
+                    bf!(&mut self.emitter;
+                        z[-]
+                        x[y+x-]
+                        y[[-]z+y]
+                    );
+                    Ok(z)
                 }
                 _ => Err(anyhow!("Binary expression {:?} not implemented", opcode)),
             },
@@ -487,7 +516,7 @@ mod tests {
         let mut runtime = Runtime::new();
         let expr = ast::Expression::Literal(3);
         runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
-        assert_eq!(runtime.emitter.emit(), "putc(3);\n  3\n  +++\n.");
+        assert_eq!(runtime.emitter.emit(), "putc(3);\n  3\n  [-]+++\n.");
     }
 
     #[test]
@@ -497,7 +526,7 @@ mod tests {
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(),
-            "putc(!2);\n  !2\n    2\n    ++\n  >[-]+<[->-<]>[<+>-]\n<."
+            "putc(!2);\n  !2\n    2\n    [-]++\n  >[-]+<[->-<]>[<+>-]\n<."
         );
     }
 
@@ -527,5 +556,19 @@ mod tests {
         let bf_code = compile_bf_script(r#"putc("0" + 15 / 3);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
         assert_eq!(output, "5");
+    }
+
+    #[test]
+    fn test_end2end_and() {
+        let bf_code = compile_bf_script(r#"putc("0" + (1 && 0));putc("0" + (1 && 7) / (1 && 7));"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "01");
+    }
+
+    #[test]
+    fn test_end2end_or() {
+        let bf_code = compile_bf_script(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "01");
     }
 }
