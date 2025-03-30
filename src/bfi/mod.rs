@@ -3,8 +3,9 @@ mod ast;
 use anyhow::Result;
 use ast::Op;
 use lalrpop_util::lalrpop_mod;
-use num_traits::{FromPrimitive, PrimInt, ToPrimitive};
+use num_traits::{FromPrimitive, PrimInt, ToPrimitive, WrappingAdd, WrappingSub};
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::io::{Cursor, Read, Write};
 
 lalrpop_mod!(parser, "/bfi/bf.rs");
@@ -16,7 +17,7 @@ pub fn run_program<T>(
     max_steps: Option<usize>,
 ) -> Result<()>
 where
-    T: PrimInt + FromPrimitive + ToPrimitive,
+    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug,
 {
     let ops = parser::ProgramParser::new()
         .parse(program)
@@ -36,13 +37,23 @@ where
             }
             Op::Increment(n) => {
                 let cell = memory.entry(mp).or_insert(T::zero());
-                let increment = T::from_i32(*n).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Conversion error: could not convert increment value {} to target type",
-                        n
-                    )
-                })?;
-                *cell = *cell + increment;
+                if *n < 0 {
+                    let decrement = T::from_i32(-*n).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Conversion error: could not convert decrement value {} to target type",
+                            n
+                        )
+                    })?;
+                    *cell = cell.wrapping_sub(&decrement);
+                } else {
+                    let increment = T::from_i32(*n).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Conversion error: could not convert increment value {} to target type",
+                            n
+                        )
+                    })?;
+                    *cell = cell.wrapping_add(&increment);
+                }
             }
             Op::Read => {
                 let mut buf = [0; 1];
@@ -67,8 +78,9 @@ where
             Op::Write => {
                 let cell = memory.get(&mp).unwrap_or(&zero);
                 let value = cell
+                    .clone()
                     .to_u8()
-                    .ok_or_else(|| anyhow::anyhow!("Conversion error to u8"))?;
+                    .ok_or_else(|| anyhow::anyhow!("Could not convert {:?} to u8", cell))?;
                 output.write_all(&[value])?;
             }
             Op::JumpIfZero(n) => {
@@ -93,7 +105,7 @@ pub fn run_program_from_str<T>(
     max_steps: Option<usize>,
 ) -> Result<String>
 where
-    T: PrimInt + FromPrimitive + ToPrimitive,
+    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug,
 {
     let mut reader = Cursor::new(input.as_bytes());
     let mut output_buffer = Vec::new();

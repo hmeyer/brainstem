@@ -8,6 +8,7 @@ use std::rc::{Rc, Weak};
 #[derive(Debug)]
 pub struct Variable {
     name: String,
+    is_temp: bool,
     address: isize,
     size: usize,
     // Store a weak reference to avoid a reference cycle.
@@ -50,7 +51,12 @@ impl Context {
         Ok(())
     }
 
-    fn add_impl(context: &Rc<RefCell<Self>>, name: &str, size: usize) -> Result<Rc<Variable>> {
+    fn add_impl(
+        context: &Rc<RefCell<Self>>,
+        name: &str,
+        is_temp: bool,
+        size: usize,
+    ) -> Result<Rc<Variable>> {
         let weak_ctx = Rc::downgrade(context);
         let mut ctx = context.borrow_mut();
         let address = ctx.find_next_free(size);
@@ -59,6 +65,7 @@ impl Context {
             Entry::Vacant(entry) => {
                 let variable = Rc::new(Variable {
                     name: name.to_string(),
+                    is_temp,
                     address,
                     size,
                     context: weak_ctx,
@@ -79,7 +86,7 @@ impl Context {
             name = format!("__temp{}", temp_count);
             *temp_count += 1;
         }
-        Self::add_impl(context, &name, size)
+        Self::add_impl(context, &name, true, size)
     }
 
     fn find_next_free(&self, size: usize) -> isize {
@@ -110,10 +117,10 @@ pub trait ContextExt {
 
 impl ContextExt for Rc<RefCell<Context>> {
     fn add_with_size(&self, name: &str, size: usize) -> Result<Rc<Variable>> {
-        Context::add_impl(self, name, size)
+        Context::add_impl(self, name, false, size)
     }
     fn add(&self, name: &str) -> Result<Rc<Variable>> {
-        Context::add_impl(self, name, 1)
+        Context::add_impl(self, name, false, 1)
     }
     fn add_temp(&self) -> Result<Rc<Variable>> {
         Context::add_temp_impl(self, 1)
@@ -266,6 +273,28 @@ impl Runtime {
         }
     }
 
+    fn copy(&mut self, from: &Variable, to: &Variable) -> Result<()> {
+        let _indent = self
+            .emitter
+            .add_indent_comment_newline(format!("Copy {:?}->{:?}", from, to))?;
+        let t = self.context.add_temp()?;
+        bf!(&mut self.emitter;
+            t[-] to[-]
+            from[to+t+from-]
+            t[from+t-]
+        );
+        Ok(())
+    }
+
+    fn wrap_temp(&mut self, var: Rc<Variable>) -> Result<Rc<Variable>> {
+        if var.is_temp {
+            return Ok(var);
+        }
+        let t = self.context.add_temp()?;
+        self.copy(&var, &t)?;
+        Ok(t)
+    }
+
     fn compile_expression(&mut self, expr: &ast::Expression) -> Result<Rc<Variable>> {
         let _indent = self
             .emitter
@@ -283,8 +312,10 @@ impl Runtime {
                     &ast::Opcode::Not => {
                         let x = self.compile_expression(expr)?;
                         let t = self.context.add_temp()?;
-                        bf!(&mut self.emitter; t[-]+ );
-                        bf!(&mut self.emitter; x[-t-x]t[x+t-] );
+                        bf!(&mut self.emitter;
+                            t[-]+
+                            x[-t-x]t[x+t-]
+                        );
                         Ok(x)
                     }
                     &ast::Opcode::Sub => self.compile_expression(&ast::Expression::Binary(
@@ -296,9 +327,68 @@ impl Runtime {
                 }
                 // Compile the expression.
             }
-            ast::Expression::Binary(lhs, _, rhs) => {
-                Err(anyhow!("Binary expressions not implemented"))
-            }
+            ast::Expression::Binary(x, opcode, y) => match opcode {
+                &ast::Opcode::Mul => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let t0 = self.context.add_temp()?;
+                    let t1 = self.context.add_temp()?;
+                    bf!(&mut self.emitter;
+                        t0[-]
+                        t1[-]
+                        x[t1+x-]
+                        t1[
+                            y[x+t0+y-]t0[y+t0-]
+                        t1-]
+                    );
+                    Ok(x)
+                }
+                &ast::Opcode::Div => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let t0 = self.context.add_temp()?;
+                    let t1 = self.context.add_temp()?;
+                    let t2 = self.context.add_temp()?;
+                    let t3 = self.context.add_temp()?;
+                    bf!(&mut self.emitter;
+                            t0[-] t1[-] t2[-] t3[-]
+                            x[t0+x-]
+                                t0[
+                                    y[t1+t2+y-]
+                                    t2[y+t2-]
+                                    t1[
+                                    t2+
+                                    t0-[t2[-]t3+t0-]
+                                    t3[t0+t3-]
+                                    t2[
+                                        t1-
+                                        [x-t1[-]]+
+                                    t2-]
+                                t1-]
+                                x+
+                            t0]);
+                    Ok(x)
+                }
+                &ast::Opcode::Add => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let y = self.wrap_temp(y)?;
+                    bf!(&mut self.emitter; y[-x+y] );
+                    Ok(x)
+                }
+                &ast::Opcode::Sub => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let y = self.wrap_temp(y)?;
+                    bf!(&mut self.emitter; y[-x-y] );
+                    Ok(x)
+                }
+                _ => Err(anyhow!("Binary expression {:?} not implemented", opcode)),
+            },
             ast::Expression::Variable(name) => Err(anyhow!("Variable expressions not implemented")),
             ast::Expression::IndexedVariable(name, index) => {
                 Err(anyhow!("IndexedVariable expressions not implemented"))
@@ -342,10 +432,7 @@ impl Runtime {
     }
 }
 
-
-pub fn compile_bf_script(
-    program: &str,
-) -> Result<String> {
+pub fn compile_bf_script(program: &str) -> Result<String> {
     let ops = ProgramParser::new()
         .parse(program)
         .map_err(|e| anyhow!("{}", e))?;
@@ -410,7 +497,7 @@ mod tests {
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(),
-            "putc(!2);\n  !2\n    2\n    ++\n  >[-]+\n  <[->-<]>[<+>-]\n<."
+            "putc(!2);\n  !2\n    2\n    ++\n  >[-]+<[->-<]>[<+>-]\n<."
         );
     }
 
@@ -419,5 +506,26 @@ mod tests {
         let bf_code = compile_bf_script(r#"putc("3");"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
         assert_eq!(output, "3");
+    }
+
+    #[test]
+    fn test_end2end_add_sub() {
+        let bf_code = compile_bf_script(r#"putc("0" + 99 - 90);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "9");
+    }
+
+    #[test]
+    fn test_end2end_mul() {
+        let bf_code = compile_bf_script(r#"putc("0" + 2 * 3);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "6");
+    }
+
+    #[test]
+    fn test_end2end_div() {
+        let bf_code = compile_bf_script(r#"putc("0" + 15 / 3);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "5");
     }
 }

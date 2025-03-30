@@ -13,10 +13,7 @@ mod tests {
     #[test]
     fn literal_expressions() {
         assert_eq!(
-            format!(
-                "{:?}",
-                ProgramParser::new().parse(r#"3;"a";"#).unwrap()
-            ),
+            format!("{:?}", ProgramParser::new().parse(r#"3;"a";"#).unwrap()),
             "[3;, 97;]"
         );
     }
@@ -28,7 +25,7 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("var x = !--+3;").unwrap()
             ),
-            "[var x = !--3;]"
+            "[var x = !➖➖3;]"
         );
     }
 
@@ -50,7 +47,7 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("var x = 3 + 4 * foo;").unwrap()
             ),
-            "[var x = (3 + (4 * foo));]"
+            "[var x = (3 ➕ (4 * foo));]"
         );
     }
 
@@ -87,7 +84,7 @@ mod tests {
                     .parse("var x = 1 + 2 * 3 || 4 > (3 + 2) - !foo;")
                     .unwrap()
             ),
-            "[var x = ((1 + (2 * 3)) || (4 > ((3 + 2) - !foo)));]"
+            "[var x = ((1 ➕ (2 * 3)) || (4 > ((3 ➕ 2) ➖ !foo)));]"
         );
     }
 
@@ -102,7 +99,7 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("var foo = 8 * 3 + 9;").unwrap()
             ),
-            "[var foo = ((8 * 3) + 9);]"
+            "[var foo = ((8 * 3) ➕ 9);]"
         );
         assert_eq!(
             format!(
@@ -157,7 +154,7 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("putc(foo + bar);").unwrap()
             ),
-            "[putc((foo + bar));]"
+            "[putc((foo ➕ bar));]"
         );
     }
 
