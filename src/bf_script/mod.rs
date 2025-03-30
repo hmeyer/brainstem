@@ -11,6 +11,17 @@ mod tests {
     use super::parser::ProgramParser;
 
     #[test]
+    fn literal_expressions() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new().parse(r#"3;"a";"#).unwrap()
+            ),
+            "[3;, 97;]"
+        );
+    }
+
+    #[test]
     fn unary_expressions() {
         assert_eq!(
             format!(

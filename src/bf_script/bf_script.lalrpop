@@ -9,6 +9,7 @@ match {
     r"[0-9]+" => NUMBER,
     r"[a-zA-Z_]\w*" => ID,
     r#""[^"]*""# => STRING,
+    "'[^']'" => CHAR,
 
     _, 
 
@@ -89,6 +90,10 @@ Expression: Expression<'input> = {
 
 Primary: Expression<'input> = {
     NUMBER => Expression::Literal(i32::from_str(<>).unwrap()),
+    STRING => { 
+        assert_eq!(<>.len(), 3);
+        Expression::Literal(<>.chars().nth(1).unwrap() as i32)
+    },
     <n:Identifier> <i:("[" <Expression> "]")?> => match i {
         None => Expression::Variable(n),
         Some(index) => Expression::IndexedVariable(n, Box::new(index))
