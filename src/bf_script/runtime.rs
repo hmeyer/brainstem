@@ -1,4 +1,4 @@
-use super::ast;
+use super::{ast, parser::ProgramParser};
 use anyhow::{Result, anyhow, bail};
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
@@ -342,9 +342,24 @@ impl Runtime {
     }
 }
 
+
+pub fn compile_bf_script(
+    program: &str,
+) -> Result<String> {
+    let ops = ProgramParser::new()
+        .parse(program)
+        .map_err(|e| anyhow!("{}", e))?;
+    let mut runtime = Runtime::new();
+    for op in ops {
+        runtime.compile(&op)?;
+    }
+    Ok(runtime.emitter.emit())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bfi::run_program_from_str;
 
     #[test]
     fn test_add() {
@@ -397,5 +412,12 @@ mod tests {
             runtime.emitter.emit(),
             "putc(!2);\n  !2\n    2\n    ++\n  >[-]+\n  <[->-<]>[<+>-]\n<."
         );
+    }
+
+    #[test]
+    fn test_end2end_literal() {
+        let bf_code = compile_bf_script(r#"putc("3");"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "3");
     }
 }
