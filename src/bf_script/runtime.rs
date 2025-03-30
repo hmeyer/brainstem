@@ -560,14 +560,16 @@ mod tests {
 
     #[test]
     fn test_end2end_and() {
-        let bf_code = compile_bf_script(r#"putc("0" + (1 && 0));putc("0" + (1 && 7) / (1 && 7));"#).unwrap();
+        let bf_code =
+            compile_bf_script(r#"putc("0" + (1 && 0));putc("0" + (1 && 7) / (1 && 7));"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
         assert_eq!(output, "01");
     }
 
     #[test]
     fn test_end2end_or() {
-        let bf_code = compile_bf_script(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
+        let bf_code =
+            compile_bf_script(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
         assert_eq!(output, "01");
     }
