@@ -27,6 +27,27 @@ impl Drop for Variable {
     }
 }
 
+impl Variable {
+    pub fn predecessor(&self) -> Variable {
+        Variable {
+            name: format!("predecessor({})", self.name),
+            is_temp: self.is_temp,
+            address: self.address - 1,
+            size: 1,
+            context: self.context.clone(),
+        }
+    }
+    pub fn successor(&self, pos: usize) -> Variable {
+        Variable {
+            name: format!("successor({}, {})", self.name, pos),
+            is_temp: self.is_temp,
+            address: self.address + pos as isize,
+            size: 1,
+            context: self.context.clone(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Context {
     variables: HashMap<String, Weak<Variable>>,
@@ -41,6 +62,12 @@ impl Context {
             used_addresses: HashSet::new(),
             temp_count: 0,
         }))
+    }
+
+    fn get_variable(&self, name: &str) -> Option<Rc<Variable>> {
+        self.variables
+            .get(name)
+            .and_then(|weak_var| weak_var.upgrade())
     }
 
     fn deregister(&mut self, name: &str, address: isize, size: usize) -> Result<()> {
@@ -256,6 +283,7 @@ macro_rules! bf {
 }
 
 macro_rules! bf_impl {
+    ($emitter:expr; mv($src:ident, $dst:ident) $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; $dst[-]$src[$dst+$src-] $($rest)*);};
     ($emitter:expr; $v:ident $($rest:tt)*) => {let mut emitter=$emitter; emitter.move_to(&$v); bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; + $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("+".into())?; bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; - $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("-".into())?; bf_impl!(&mut emitter; $($rest)*); };
@@ -473,15 +501,121 @@ impl Runtime {
                     Ok(x)
                 }
             },
-            ast::Expression::Variable(name) => Err(anyhow!("Variable expressions not implemented")),
+            ast::Expression::Variable(name) => {
+                let v = self
+                    .context
+                    .borrow()
+                    .get_variable(name)
+                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                Ok(v)
+            }
             ast::Expression::IndexedVariable(name, index) => {
-                Err(anyhow!("IndexedVariable expressions not implemented"))
+                let array = self
+                    .context
+                    .borrow()
+                    .get_variable(name)
+                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                let result = self.context.add_temp()?;
+                let index = self.compile_expression(index)?;
+                let before_head = array.predecessor();
+                let space = array.successor(0);
+                let index1 = array.successor(1);
+                let index2 = array.successor(2);
+                let data = array.successor(3);
+                let after_head = array.successor(4);
+                self.copy(&index, &index1)?;
+                self.copy(&index, &index2)?;
+                {
+                    let _indent = self
+                        .emitter
+                        .add_indent_comment_newline("move head to array index".into())?;
+                    bf!(&mut self.emitter;
+                        index1[-
+                            mv(after_head, space)
+                            mv(index2, data)
+                            mv(index1, index2)
+                            >
+                            index1
+                        ]
+                    );
+                }
+                self.copy(&after_head, &data)?;
+                {
+                    let _indent = self
+                        .emitter
+                        .add_indent_comment_newline("move head back".into())?;
+                    bf!(&mut self.emitter;
+                        index2[-
+                            mv(index2, index1)
+                            mv(data, index2)
+                            mv(before_head, data)
+                            <
+                            index2
+                        ]
+                    );
+                }
+                self.copy(&data, &result)?;
+                Ok(result)
             }
             ast::Expression::Assignment(name, expr) => {
-                Err(anyhow!("Assignment expressions not implemented"))
+                let x = self.compile_expression(expr)?;
+                let v = self
+                    .context
+                    .borrow()
+                    .get_variable(name)
+                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                self.copy(&x, &v)?;
+                Ok(x)
             }
             ast::Expression::IndexedAssignment(name, index, expr) => {
-                Err(anyhow!("IndexedAssignment expressions not implemented"))
+                let array = self
+                    .context
+                    .borrow()
+                    .get_variable(name)
+                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                let result = self.context.add_temp()?;
+                let index = self.compile_expression(index)?;
+                let value = self.compile_expression(expr)?;
+                let before_head = array.predecessor();
+                let space = array.successor(0);
+                let index1 = array.successor(1);
+                let index2 = array.successor(2);
+                let data = array.successor(3);
+                self.copy(&value, &data)?;
+                let after_head = array.successor(4);
+                self.copy(&index, &index1)?;
+                self.copy(&index, &index2)?;
+                {
+                    let _indent = self
+                        .emitter
+                        .add_indent_comment_newline("move head to array index".into())?;
+                    bf!(&mut self.emitter;
+                        index1[-
+                            mv(after_head, space)
+                            mv(data, after_head)
+                            mv(index2, data)
+                            mv(index1, index2)
+                            >
+                            index1
+                        ]
+                    );
+                }
+                self.copy(&data, &after_head)?;
+                {
+                    let _indent = self
+                        .emitter
+                        .add_indent_comment_newline("move head back".into())?;
+                    bf!(&mut self.emitter;
+                        index2[-
+                            mv(index2, index1)
+                            mv(before_head, data)
+                            <
+                            index2
+                        ]
+                    );
+                }
+                self.copy(&data, &result)?;
+                Ok(value)
             }
         }
     }
