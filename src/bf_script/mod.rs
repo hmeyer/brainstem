@@ -1,7 +1,6 @@
 mod ast;
 mod runtime;
 
-use anyhow::Result;
 use lalrpop_util::lalrpop_mod;
 
 lalrpop_mod!(parser, "/bf_script/bf_script.rs");
