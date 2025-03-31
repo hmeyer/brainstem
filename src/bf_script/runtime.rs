@@ -113,6 +113,7 @@ pub trait ContextExt {
     fn add_with_size(&self, name: &str, size: usize) -> Result<Rc<Variable>>;
     fn add(&self, name: &str) -> Result<Rc<Variable>>;
     fn add_temp(&self) -> Result<Rc<Variable>>;
+    fn add_temp_with_size(&self, size: usize) -> Result<Rc<Variable>>;
 }
 
 impl ContextExt for Rc<RefCell<Context>> {
@@ -124,6 +125,9 @@ impl ContextExt for Rc<RefCell<Context>> {
     }
     fn add_temp(&self) -> Result<Rc<Variable>> {
         Context::add_temp_impl(self, 1)
+    }
+    fn add_temp_with_size(&self, size: usize) -> Result<Rc<Variable>> {
+        Context::add_temp_impl(self, size)
     }
 }
 
@@ -258,6 +262,11 @@ macro_rules! bf_impl {
     ($emitter:expr; . $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(".".into())?; bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; , $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(",".into())?; bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; .. $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; . . $($rest)*); };
+    ($emitter:expr; < $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("<".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; << $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("<<".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; > $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(">".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; >> $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(">>".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; -> $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("->".into())?; bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; [ $($body:tt)* ] $($rest:tt)* ) => {
         let mut emitter=$emitter; emitter.add_code("[".into())?; bf_impl!(&mut emitter; $($body)*); emitter.add_code("]".into())?; bf_impl!(&mut emitter; $($rest)*);
     };
@@ -309,13 +318,13 @@ impl Runtime {
                 Ok(result)
             }
             ast::Expression::Not(expr) => {
-                        let x = self.compile_expression(expr)?;
-                        let t = self.context.add_temp()?;
-                        bf!(&mut self.emitter;
-                            t[-]+
-                            x[-t-x]t[x+t-]
-                        );
-                        Ok(x)
+                let x = self.compile_expression(expr)?;
+                let t = self.context.add_temp()?;
+                bf!(&mut self.emitter;
+                    t[-]+
+                    x[-t-x]t[x+t-]
+                );
+                Ok(x)
             }
             ast::Expression::Binary(x, opcode, y) => match opcode {
                 &ast::Opcode::Mul => {
@@ -361,6 +370,7 @@ impl Runtime {
                             t0]);
                     Ok(x)
                 }
+                &ast::Opcode::Mod => unimplemented!("Mod operator not implemented"),
                 &ast::Opcode::Add => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
@@ -405,7 +415,63 @@ impl Runtime {
                     );
                     Ok(z)
                 }
-                _ => Err(anyhow!("Binary expression {:?} not implemented", opcode)),
+                &ast::Opcode::Lt => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let temp0 = self.context.add_temp()?;
+                    let temp1 = self.context.add_temp_with_size(3)?;
+                    bf!(&mut self.emitter;
+                        temp0[-]
+                        temp1[-] >[-]+ >[-] <<
+                        y[temp0+ temp1+ y-]
+                        temp0[y+ temp0-]
+                        x[temp0+ x-]+
+                        temp1[>-]> [< x- temp0[-] temp1>->]<+<
+                        temp0[temp1- [>-]> [< x- temp0[-]+ temp1>->]<+< temp0-]
+                    );
+                    Ok(x)
+                }
+                &ast::Opcode::Le => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let temp0 = self.context.add_temp()?;
+                    let temp1 = self.context.add_temp_with_size(3)?;
+                    bf!(&mut self.emitter;
+                        temp0[-]
+                        temp1[-] >[-]+ >[-] <<
+                        y[temp0+ temp1+ y-]
+                        temp1[y+ temp1-]
+                        x[temp1+ x-]
+                        temp1[>-]> [< x+ temp0[-] temp1>->]<+<
+                        temp0[temp1- [>-]> [< x+ temp0[-]+ temp1>->]<+< temp0-]
+                    );
+                    Ok(x)
+                }
+                &ast::Opcode::Eq => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let y = self.wrap_temp(y)?;
+                    bf!(&mut self.emitter;
+                        x[-y-x]+y[x-y[-]]
+                    );
+                    Ok(x)
+                }
+                &ast::Opcode::Ne => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let y = self.wrap_temp(y)?;
+                    bf!(&mut self.emitter;
+                        x[
+                            y-x-]
+                        y[[-]
+                            x+y]
+                    );
+                    Ok(x)
+                }
             },
             ast::Expression::Variable(name) => Err(anyhow!("Variable expressions not implemented")),
             ast::Expression::IndexedVariable(name, index) => {
@@ -561,5 +627,42 @@ mod tests {
             compile_bf_script(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
         assert_eq!(output, "01");
+    }
+
+    #[test]
+    fn test_end2end_lt() {
+        let bf_code =
+            compile_bf_script(r#"putc("0" + (0 < 17));putc("0" + (3 < 2));putc("0" + (3 < 3));"#)
+                .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "100");
+    }
+
+    #[test]
+    fn test_end2end_le() {
+        let bf_code = compile_bf_script(
+            r#"putc("0" + (0 <= 17));putc("0" + (3 <= 2));putc("0" + (3 <= 3));"#,
+        )
+        .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "101");
+    }
+
+    #[test]
+    fn test_end2end_eq() {
+        let bf_code =
+            compile_bf_script(r#"putc("0" + (0 == 0));putc("0" + (3 == 3));putc("0" + (3 == 2));"#)
+                .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "110");
+    }
+
+    #[test]
+    fn test_end2end_ne() {
+        let bf_code =
+            compile_bf_script(r#"putc("0" + (0 != 0));putc("0" + (3 != 3));putc("0" + (3 != 2));"#)
+                .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        assert_eq!(output, "001");
     }
 }
