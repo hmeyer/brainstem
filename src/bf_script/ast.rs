@@ -45,7 +45,7 @@ impl Debug for Statement<'_> {
 #[derive(Clone)]
 pub enum Expression<'input> {
     Literal(i32),
-    Unary(Opcode, Box<Expression<'input>>),
+    Not(Box<Expression<'input>>),
     Binary(Box<Expression<'input>>, Opcode, Box<Expression<'input>>),
     Variable(&'input str),
     IndexedVariable(&'input str, Box<Expression<'input>>),
@@ -87,9 +87,6 @@ impl From<&str> for Opcode {
             "&&" => Opcode::And,
             "||" => Opcode::Or,
             "^^" => Opcode::Xor,
-            "!" => Opcode::Not,
-            ">" => Opcode::Gt,
-            ">=" => Opcode::Ge,
             "<" => Opcode::Lt,
             "<=" => Opcode::Le,
             "==" => Opcode::Eq,
@@ -104,7 +101,7 @@ impl Debug for Expression<'_> {
         use self::Expression::*;
         match *self {
             Literal(n) => write!(fmt, "{}", n),
-            Unary(op, ref e) => write!(fmt, "{:?}{:?}", op, e),
+            Not(ref e) => write!(fmt, "!{:?}", e),
             Binary(ref l, op, ref r) => write!(fmt, "({:?} {:?} {:?})", l, op, r),
             Variable(s) => write!(fmt, "{}", s),
             IndexedVariable(s, ref e) => write!(fmt, "{}[{:?}]", s, e),

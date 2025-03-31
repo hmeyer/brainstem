@@ -52,8 +52,8 @@ Expression: Expression<'input> = {
     Primary,
 
     #[precedence(level="1")] #[assoc(side="left")]
-    <o:"!"> <e:Expression> => Expression::Unary(o.into(), Box::new(e)),
-    <o:"-"> <e:Expression> => Expression::Unary(o.into(), Box::new(e)),
+    "!" <e:Expression> => Expression::Not(Box::new(e)),
+    <o:"-"> <e:Expression> => Expression::Binary(Box::new(Expression::Literal(0)), o.into(), Box::new(e)),
     <o:"+"> <e:Expression> => e,
 
     #[precedence(level="2")] #[assoc(side="left")]
@@ -66,10 +66,11 @@ Expression: Expression<'input> = {
     <l:Expression> <o:"-"> <r:Expression> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
 
     #[precedence(level="4")] #[assoc(side="left")]
-    <l:Expression> <o:">"> <r:Expression> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Expression> <o:">="> <r:Expression> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Expression> <o:"<"> <r:Expression> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
-    <l:Expression> <o:"<="> <r:Expression> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),
+    <l:Expression> "<" <r:Expression> => Expression::Binary(Box::new(l), "<".into(), Box::new(r)),
+    <l:Expression> "<=" <r:Expression> => Expression::Binary(Box::new(l), "<=".into(), Box::new(r)),
+    // Swap r and l to implement gt and ge as lt and le.
+    <l:Expression> ">" <r:Expression> => Expression::Binary(Box::new(r), "<".into(), Box::new(l)),
+    <l:Expression> ">=" <r:Expression> => Expression::Binary(Box::new(r), "<=".into(), Box::new(l)),
 
     #[precedence(level="5")] #[assoc(side="left")]
     <l:Expression> <o:"!="> <r:Expression> => Expression::Binary(Box::new(l), o.into(), Box::new(r)),

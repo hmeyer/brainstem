@@ -308,9 +308,7 @@ impl Runtime {
                 self.emitter.newline();
                 Ok(result)
             }
-            ast::Expression::Unary(opcode, expr) => {
-                match opcode {
-                    &ast::Opcode::Not => {
+            ast::Expression::Not(expr) => {
                         let x = self.compile_expression(expr)?;
                         let t = self.context.add_temp()?;
                         bf!(&mut self.emitter;
@@ -318,15 +316,6 @@ impl Runtime {
                             x[-t-x]t[x+t-]
                         );
                         Ok(x)
-                    }
-                    &ast::Opcode::Sub => self.compile_expression(&ast::Expression::Binary(
-                        Box::new(ast::Expression::Literal(0)),
-                        ast::Opcode::Sub,
-                        expr.clone(),
-                    )),
-                    _ => Err(anyhow!("Unary {:?} not implemented", opcode)),
-                }
-                // Compile the expression.
             }
             ast::Expression::Binary(x, opcode, y) => match opcode {
                 &ast::Opcode::Mul => {
@@ -522,7 +511,7 @@ mod tests {
     #[test]
     fn test_putc_not_2() {
         let mut runtime = Runtime::new();
-        let expr = ast::Expression::Unary(ast::Opcode::Not, Box::new(ast::Expression::Literal(2)));
+        let expr = ast::Expression::Not(Box::new(ast::Expression::Literal(2)));
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(),

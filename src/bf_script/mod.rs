@@ -25,7 +25,7 @@ mod tests {
                 "{:?}",
                 ProgramParser::new().parse("var x = !--+3;").unwrap()
             ),
-            "[var x = !➖➖3;]"
+            "[var x = !(0 ➖ (0 ➖ 3));]"
         );
     }
 
@@ -84,7 +84,7 @@ mod tests {
                     .parse("var x = 1 + 2 * 3 || 4 > (3 + 2) - !foo;")
                     .unwrap()
             ),
-            "[var x = ((1 ➕ (2 * 3)) || (4 > ((3 ➕ 2) ➖ !foo)));]"
+            "[var x = ((1 ➕ (2 * 3)) || (((3 ➕ 2) ➖ !foo) < 4));]"
         );
     }
 
