@@ -1,4 +1,5 @@
 mod ast;
+mod context;
 mod runtime;
 
 use lalrpop_util::lalrpop_mod;
