@@ -177,8 +177,16 @@ impl Context {
     }
 
     pub fn pop_scope(&mut self) -> Result<()> {
-        if self.scoped_variable_store.pop().is_none() {
+        let scoped_vars = self.scoped_variable_store.pop();
+        if scoped_vars.is_none() {
             return Err(anyhow!("No scope to pop"));
+        }
+        // We need to manually drop the variables in the current scope.
+        // Otherwise they would try to deregister themselves when they go out of scope, while we still hold the borrow_mut.
+        // This would fail, because they would also try to borrow_mut the context.
+        for mut var in scoped_vars.unwrap() {
+            self.deregister(&var.name, var.address, var.size)?;
+            Rc::get_mut(&mut var).unwrap().context = Weak::new(); // Clear the context reference
         }
         Ok(())
     }

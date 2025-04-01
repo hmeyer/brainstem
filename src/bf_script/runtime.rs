@@ -515,7 +515,9 @@ impl Runtime {
             }
             ast::Statement::Block(statements) => {
                 self.context.borrow_mut().push_scope();
-                bail!("Block statement not implemented");
+                for statement in statements {
+                    self.compile(statement)?;
+                }
                 self.context.borrow_mut().pop_scope()?;
             }
             ast::Statement::Expression(expr) => {
@@ -670,5 +672,28 @@ mod tests {
         "#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
         assert_eq!(output, "Hello World");
+    }
+
+    #[test]
+    fn test_block_scope_simple() {
+        compile_bf_script(
+            r#"
+            var x = 1; { x = 2; }
+        "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_block_var_not_in_scope() {
+        let bf_code = compile_bf_script(
+            r#"
+            {var x = 1;} x = 2;
+        "#,
+        );
+        assert_eq!(
+            bf_code.err().unwrap().to_string(),
+            "Variable x not found in context"
+        );
     }
 }
