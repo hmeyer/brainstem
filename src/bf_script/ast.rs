@@ -22,7 +22,8 @@ impl Debug for Statement<'_> {
                 write!(fmt, "var {} = {:?};", n, i)
             }
             ArrayDeclaration(n, ref i) => {
-                let initializers = i.iter()
+                let initializers = i
+                    .iter()
                     .map(|e| format!("{:?}", e))
                     .collect::<Vec<_>>()
                     .join("; ");
@@ -105,7 +106,9 @@ impl Debug for Expression<'_> {
             Variable(s) => write!(fmt, "{}", s),
             ArrayLookup(s, ref i) => write!(fmt, "ArrayLookup({}; {:?})", s, i),
             Assignment(s, ref e) => write!(fmt, "{} = {:?}", s, e),
-            ArrayAssignment(s, ref i, ref e) => write!(fmt, "ArrayAssignment({}; {:?}; {:?})", s, i, e),
+            ArrayAssignment(s, ref i, ref e) => {
+                write!(fmt, "ArrayAssignment({}; {:?}; {:?})", s, i, e)
+            }
         }
     }
 }

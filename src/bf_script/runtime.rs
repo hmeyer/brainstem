@@ -3,9 +3,13 @@ use anyhow::{Result, anyhow, bail};
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Error, Formatter};
 use std::rc::{Rc, Weak};
 
-#[derive(Debug)]
+trait VariableLike: Debug {
+    fn address(&self) -> isize;
+}
+
 pub struct Variable {
     name: String,
     is_temp: bool,
@@ -13,6 +17,28 @@ pub struct Variable {
     size: usize,
     // Store a weak reference to avoid a reference cycle.
     context: Weak<RefCell<Context>>,
+}
+
+impl Debug for Variable {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
+        if self.size == 1 {
+            write!(fmt, "{}{{{}}}", self.name, self.address)
+        } else {
+            write!(fmt, "{}{{{};{}}}", self.name, self.address, self.size)
+        }
+    }
+}
+
+impl VariableLike for Variable {
+    fn address(&self) -> isize {
+        self.address
+    }
+}
+
+impl VariableLike for Rc<Variable> {
+    fn address(&self) -> isize {
+        self.address
+    }
 }
 
 impl Drop for Variable {
@@ -27,24 +53,85 @@ impl Drop for Variable {
     }
 }
 
-impl Variable {
-    pub fn predecessor(&self) -> Variable {
-        Variable {
-            name: format!("predecessor({})", self.name),
-            is_temp: self.is_temp,
-            address: self.address - 1,
-            size: 1,
-            context: self.context.clone(),
+trait VariableExt {
+    fn predecessor(&self) -> Successor;
+    fn successor(&self, offset: usize) -> Successor;
+}
+
+impl VariableExt for Rc<Variable> {
+    fn predecessor(&self) -> Successor {
+        Successor {
+            original: self.clone(),
+            offset: -1,
         }
     }
-    pub fn successor(&self, pos: usize) -> Variable {
-        Variable {
-            name: format!("successor({}; {})", self.name, pos),
-            is_temp: self.is_temp,
-            address: self.address + pos as isize,
-            size: 1,
-            context: self.context.clone(),
+    fn successor(&self, offset: usize) -> Successor {
+        Successor {
+            original: self.clone(),
+            offset: offset as isize,
         }
+    }
+}
+
+struct Successor {
+    original: Rc<Variable>,
+    offset: isize,
+}
+
+impl Debug for Successor {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
+        let neg = if self.offset < 0 { "neg" } else { "" };
+        write!(
+            fmt,
+            "Successor({:?}; {}{})",
+            self.original,
+            neg,
+            self.offset.abs()
+        )
+    }
+}
+
+impl VariableLike for Successor {
+    fn address(&self) -> isize {
+        self.original.address + self.offset
+    }
+}
+
+trait AsVariableLikeRef<'a> {
+    // Associated type: The concrete type T that implements VariableLike
+    // We need this because copy is generic over T, not dyn VariableLike
+    type Target: VariableLike + 'a;
+
+    fn as_variable_like_ref(&'a self) -> &'a Self::Target;
+}
+
+// --- Implement the Helper Trait for Expected Input Types ---
+
+// 1. Implement for Rc<Variable>
+impl<'a> AsVariableLikeRef<'a> for Rc<Variable> {
+    type Target = Variable; // The T for copy will be Variable
+    fn as_variable_like_ref(&'a self) -> &'a Variable {
+        // Dereference the Rc to get the underlying Variable
+        &**self // Equivalent to self.as_ref() or &*self.deref()
+    }
+}
+
+// 2. Implement for Variable itself
+// This handles cases where you pass `&Variable`. The method call `var_ref.as_variable_like_ref()`
+// will implicitly dereference var_ref (from &Variable to Variable) and call this impl.
+impl<'a> AsVariableLikeRef<'a> for Variable {
+    type Target = Variable; // The T for copy will be Variable
+    fn as_variable_like_ref(&'a self) -> &'a Variable {
+        // 'self' is already the &Variable we need
+        self
+    }
+}
+
+// 3. Implement for other VariableLike types (e.g., Successor) if needed
+impl<'a> AsVariableLikeRef<'a> for Successor {
+    type Target = Successor; // The T for copy will be Successor
+    fn as_variable_like_ref(&'a self) -> &'a Successor {
+        self
     }
 }
 
@@ -209,9 +296,9 @@ impl Emitter {
         self.items.push(Item::Indent(self.indents.len()));
     }
 
-    pub fn move_to(&mut self, address: &Variable) {
+    pub fn move_to<T: VariableLike>(&mut self, x: &T) {
         self.update_indent();
-        self.items.push(Item::MoveTo(address.address));
+        self.items.push(Item::MoveTo(x.address()));
     }
 
     pub fn add_code(&mut self, code: String) -> Result<()> {
@@ -304,7 +391,7 @@ macro_rules! bf {
 
 macro_rules! bf_impl {
     ($emitter:expr; mv($src:ident, $dst:ident) $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; $dst[-]$src[$dst+$src-] $($rest)*);};
-    ($emitter:expr; $v:ident $($rest:tt)*) => {let mut emitter=$emitter; emitter.move_to(&$v); bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; $v:ident $($rest:tt)*) => {let mut emitter=$emitter; emitter.move_to($v.as_variable_like_ref()); bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; + $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("+".into())?; bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; - $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("-".into())?; bf_impl!(&mut emitter; $($rest)*); };
     ($emitter:expr; . $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(".".into())?; bf_impl!(&mut emitter; $($rest)*); };
@@ -330,11 +417,19 @@ impl Runtime {
         }
     }
 
-    fn copy(&mut self, from: &Variable, to: &Variable) -> Result<()> {
+    fn copy<
+        T1: VariableLike + for<'a> AsVariableLikeRef<'a>,
+        T2: VariableLike + for<'b> AsVariableLikeRef<'b>,
+    >(
+        &mut self,
+        from: &T1,
+        to: &T2,
+    ) -> Result<()> {
         let _indent = self
             .emitter
-            .add_indent_comment_newline(format!("copy({}; {})", from.name, to.name))?;
-        let t = self.context.add_temp()?;
+            .add_indent_comment_newline(format!("copy({:?}; {:?})", from, to))?;
+        let t_rc = self.context.add_temp()?;
+        let t = t_rc.as_ref();
         bf!(&mut self.emitter;
             t[-] to[-]
             from[to+t+from-]
@@ -348,7 +443,7 @@ impl Runtime {
             return Ok(var);
         }
         let t = self.context.add_temp()?;
-        self.copy(&var, &t)?;
+        self.copy(&*var, &*t)?;
         Ok(t)
     }
 
@@ -359,7 +454,11 @@ impl Runtime {
         match expr {
             ast::Expression::Literal(l) => {
                 let result = self.context.add_temp()?;
-                self.emitter.move_to(&result);
+                self.emitter.add_comment(format!(
+                    "creating literal {} into {}({})",
+                    l, result.name, result.address
+                ))?;
+                self.emitter.move_to(&*result);
                 self.emitter.add_code("[-]".into())?;
                 self.emitter.add_code("+".repeat(*l as usize))?;
                 self.emitter.newline();
@@ -543,8 +642,8 @@ impl Runtime {
                 let index2 = array.successor(2);
                 let data = array.successor(3);
                 let after_head = array.successor(4);
-                self.copy(&index, &index1)?;
-                self.copy(&index, &index2)?;
+                self.copy(&*index, &index1)?;
+                self.copy(&*index, &index2)?;
                 {
                     let _indent = self
                         .emitter
@@ -740,7 +839,10 @@ mod tests {
         let mut runtime = Runtime::new();
         let expr = ast::Expression::Literal(3);
         runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
-        assert_eq!(runtime.emitter.emit(), "putc(3);\n  3\n  [-]+++\n.");
+        assert_eq!(
+            runtime.emitter.emit(),
+            "putc(3);\n  3\n  creating literal 3 into __temp0(0)[-]+++\n."
+        );
     }
 
     #[test]
@@ -750,7 +852,7 @@ mod tests {
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(),
-            "putc(!2);\n  !2\n    2\n    [-]++\n  >[-]+<[->-<]>[<+>-]\n<."
+            "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0(0)[-]++\n  >[-]+<[->-<]>[<+>-]\n<."
         );
     }
 
@@ -845,9 +947,7 @@ mod tests {
 
     #[test]
     fn test_end2end_array_simple() {
-        let bf_code =
-            compile_bf_script(r#"var s[] = [7]; putc("0" + s[0]);"#).unwrap();
-        println!("{}", bf_code);
+        let bf_code = compile_bf_script(r#"var s[] = [7]; putc("0" + s[0]);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
         assert_eq!(output, "7");
     }
@@ -856,11 +956,11 @@ mod tests {
     fn test_end2end_array() {
         let bf_code =
             compile_bf_script(r#"
-            var s[] = "Hello "; putc(s[0]); putc(s[1]); putc(s[2]); putc(s[2]); putc(s[3]); putc(s[4]);
+            var s[] = "Hello "; putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]); putc(s[5]);
             s[0] = "W"; s[1] = "o"; s[2] = "r"; s[3] = "l"; s[4] = "d";
-            putc(s[0]); putc(s[1]); putc(s[2]); putc(s[2]); putc(s[3]); putc(s[4]);
+            putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]);
         "#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
         assert_eq!(output, "Hello World");
     }
 }
