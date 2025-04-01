@@ -107,7 +107,7 @@ mod tests {
                     .parse("var multi[] = [1, 2, 3];")
                     .unwrap()
             ),
-            "[var multi[] = [1, 2, 3];]"
+            "[ArrayDeclaration(multi; (1; 2; 3));]"
         );
         assert_eq!(
             format!(
@@ -116,7 +116,7 @@ mod tests {
                     .parse("var multi[] = \"Foo\";")
                     .unwrap()
             ),
-            "[var multi[] = [70, 111, 111];]"
+            "[ArrayDeclaration(multi; (70; 111; 111));]"
         );
     }
 

@@ -34,7 +34,7 @@ Statement: Statement<'input> = {
 
 VarOrArrayDeclaration: Statement<'input> = {
     "var" <n:Identifier> "=" <i: Expression> ";" => Statement::VarDeclaration(n, i),
-    "var" <n:Identifier> "[" "]" "=" "[" <mut i: (<Expression> ",")+> <t:Expression> "]" ";" => {
+    "var" <n:Identifier> "[" "]" "=" "[" <mut i: (<Expression> ",")*> <t:Expression> "]" ";" => {
         i.push(t);
         Statement::ArrayDeclaration(n, i)
     },

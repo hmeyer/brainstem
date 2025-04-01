@@ -39,7 +39,7 @@ impl Variable {
     }
     pub fn successor(&self, pos: usize) -> Variable {
         Variable {
-            name: format!("successor({}, {})", self.name, pos),
+            name: format!("successor({}; {})", self.name, pos),
             is_temp: self.is_temp,
             address: self.address + pos as isize,
             size: 1,
@@ -53,6 +53,7 @@ pub struct Context {
     variables: HashMap<String, Weak<Variable>>,
     used_addresses: HashSet<isize>,
     temp_count: usize,
+    scoped_variable_store: Vec<Vec<Rc<Variable>>>,
 }
 
 impl Context {
@@ -61,6 +62,7 @@ impl Context {
             variables: HashMap::new(),
             used_addresses: HashSet::new(),
             temp_count: 0,
+            scoped_variable_store: vec![Vec::new()],
         }))
     }
 
@@ -78,6 +80,17 @@ impl Context {
         Ok(())
     }
 
+    fn push_scope(&mut self) {
+        self.scoped_variable_store.push(Vec::new());
+    }
+
+    fn pop_scope(&mut self) -> Result<()> {
+        if self.scoped_variable_store.pop().is_none() {
+            return Err(anyhow!("No scope to pop"));
+        }
+        Ok(())
+    }
+
     fn add_impl(
         context: &Rc<RefCell<Self>>,
         name: &str,
@@ -87,8 +100,8 @@ impl Context {
         let weak_ctx = Rc::downgrade(context);
         let mut ctx = context.borrow_mut();
         let address = ctx.find_next_free(size);
-        match ctx.variables.entry(name.to_string()) {
-            Entry::Occupied(_) => Err(anyhow!("Variable {} already exists", name)),
+        let v = match ctx.variables.entry(name.to_string()) {
+            Entry::Occupied(_) => bail!("Variable {} already exists", name),
             Entry::Vacant(entry) => {
                 let variable = Rc::new(Variable {
                     name: name.to_string(),
@@ -101,9 +114,16 @@ impl Context {
                 for i in 0..size {
                     ctx.used_addresses.insert(variable.address + i as isize);
                 }
-                Ok(variable)
+                variable
             }
+        };
+        if !is_temp {
+            ctx.scoped_variable_store
+                .last_mut()
+                .unwrap()
+                .push(v.clone());
         }
+        Ok(v)
     }
 
     fn add_temp_impl(context: &Rc<RefCell<Self>>, size: usize) -> Result<Rc<Variable>> {
@@ -313,7 +333,7 @@ impl Runtime {
     fn copy(&mut self, from: &Variable, to: &Variable) -> Result<()> {
         let _indent = self
             .emitter
-            .add_indent_comment_newline(format!("Copy {:?}->{:?}", from, to))?;
+            .add_indent_comment_newline(format!("copy({}; {})", from.name, to.name))?;
         let t = self.context.add_temp()?;
         bf!(&mut self.emitter;
             t[-] to[-]
@@ -626,10 +646,20 @@ impl Runtime {
             .add_indent_comment_newline(format!("{:?}", statement))?;
         match statement {
             ast::Statement::VarDeclaration(name, init) => {
-                bail!("VarDeclaration statement not implemented");
+                let v = self.context.add(name)?;
+                let init = self.compile_expression(init)?;
+                self.copy(&init, &v)?;
             }
             ast::Statement::ArrayDeclaration(name, init) => {
-                bail!("ArrayDeclaration statement not implemented");
+                let array_head_size = 4;
+                let a = self
+                    .context
+                    .add_with_size(name, init.len() + array_head_size)?;
+                for (i, expr) in init.iter().enumerate() {
+                    let value = self.compile_expression(expr)?;
+                    let index = a.successor(i + array_head_size);
+                    self.copy(&value, &index)?;
+                }
             }
             ast::Statement::If(cond, then, else_) => {
                 bail!("If statement not implemented");
@@ -643,10 +673,12 @@ impl Runtime {
                 bail!("While statement not implemented");
             }
             ast::Statement::Block(statements) => {
+                self.context.borrow_mut().push_scope();
                 bail!("Block statement not implemented");
+                self.context.borrow_mut().pop_scope()?;
             }
             ast::Statement::Expression(expr) => {
-                bail!("Expression statement not implemented");
+                self.compile_expression(expr)?;
             }
         }
         Ok(())
@@ -725,28 +757,28 @@ mod tests {
     #[test]
     fn test_end2end_literal() {
         let bf_code = compile_bf_script(r#"putc("3");"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "3");
     }
 
     #[test]
     fn test_end2end_add_sub() {
         let bf_code = compile_bf_script(r#"putc("0" + 99 - 90);"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "9");
     }
 
     #[test]
     fn test_end2end_mul() {
         let bf_code = compile_bf_script(r#"putc("0" + 2 * 3);"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "6");
     }
 
     #[test]
     fn test_end2end_div() {
         let bf_code = compile_bf_script(r#"putc("0" + 15 / 3);"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "5");
     }
 
@@ -754,7 +786,7 @@ mod tests {
     fn test_end2end_and() {
         let bf_code =
             compile_bf_script(r#"putc("0" + (1 && 0));putc("0" + (1 && 7) / (1 && 7));"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "01");
     }
 
@@ -762,7 +794,7 @@ mod tests {
     fn test_end2end_or() {
         let bf_code =
             compile_bf_script(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "01");
     }
 
@@ -771,7 +803,7 @@ mod tests {
         let bf_code =
             compile_bf_script(r#"putc("0" + (0 < 17));putc("0" + (3 < 2));putc("0" + (3 < 3));"#)
                 .unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "100");
     }
 
@@ -781,7 +813,7 @@ mod tests {
             r#"putc("0" + (0 <= 17));putc("0" + (3 <= 2));putc("0" + (3 <= 3));"#,
         )
         .unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "101");
     }
 
@@ -790,7 +822,7 @@ mod tests {
         let bf_code =
             compile_bf_script(r#"putc("0" + (0 == 0));putc("0" + (3 == 3));putc("0" + (3 == 2));"#)
                 .unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "110");
     }
 
@@ -799,7 +831,36 @@ mod tests {
         let bf_code =
             compile_bf_script(r#"putc("0" + (0 != 0));putc("0" + (3 != 3));putc("0" + (3 != 2));"#)
                 .unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_0000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "001");
+    }
+
+    #[test]
+    fn test_end2end_var() {
+        let bf_code =
+            compile_bf_script(r#"var x = "0"; putc(x + 2); x = x+1; putc(x + 3);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
+        assert_eq!(output, "24");
+    }
+
+    #[test]
+    fn test_end2end_array_simple() {
+        let bf_code =
+            compile_bf_script(r#"var s[] = [7]; putc("0" + s[0]);"#).unwrap();
+        println!("{}", bf_code);
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "7");
+    }
+
+    #[test]
+    fn test_end2end_array() {
+        let bf_code =
+            compile_bf_script(r#"
+            var s[] = "Hello "; putc(s[0]); putc(s[1]); putc(s[2]); putc(s[2]); putc(s[3]); putc(s[4]);
+            s[0] = "W"; s[1] = "o"; s[2] = "r"; s[3] = "l"; s[4] = "d";
+            putc(s[0]); putc(s[1]); putc(s[2]); putc(s[2]); putc(s[3]); putc(s[4]);
+        "#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "Hello World");
     }
 }

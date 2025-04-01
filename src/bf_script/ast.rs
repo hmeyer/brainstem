@@ -22,7 +22,11 @@ impl Debug for Statement<'_> {
                 write!(fmt, "var {} = {:?};", n, i)
             }
             ArrayDeclaration(n, ref i) => {
-                write!(fmt, "var {}[] = {:?};", n, i)
+                let initializers = i.iter()
+                    .map(|e| format!("{:?}", e))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                write!(fmt, "ArrayDeclaration({}; ({}));", n, initializers)
             }
             If(ref c, ref t, ref e) => match e {
                 Some(e) => write!(fmt, "if {:?} then {:?} else {:?};", c, t, e),
@@ -99,9 +103,9 @@ impl Debug for Expression<'_> {
             Not(ref e) => write!(fmt, "!{:?}", e),
             Binary(ref l, op, ref r) => write!(fmt, "({:?} {:?} {:?})", l, op, r),
             Variable(s) => write!(fmt, "{}", s),
-            ArrayLookup(s, ref i) => write!(fmt, "{}[{:?}]", s, i),
+            ArrayLookup(s, ref i) => write!(fmt, "ArrayLookup({}; {:?})", s, i),
             Assignment(s, ref e) => write!(fmt, "{} = {:?}", s, e),
-            ArrayAssignment(s, ref i, ref e) => write!(fmt, "{}[{:?}] = {:?}", s, i, e),
+            ArrayAssignment(s, ref i, ref e) => write!(fmt, "ArrayAssignment({}; {:?}; {:?})", s, i, e),
         }
     }
 }
