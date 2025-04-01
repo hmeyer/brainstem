@@ -509,7 +509,7 @@ impl Runtime {
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
                 Ok(v)
             }
-            ast::Expression::IndexedVariable(name, index) => {
+            ast::Expression::ArrayLookup(name, index) => {
                 let array = self
                     .context
                     .borrow()
@@ -567,7 +567,7 @@ impl Runtime {
                 self.copy(&x, &v)?;
                 Ok(x)
             }
-            ast::Expression::IndexedAssignment(name, index, expr) => {
+            ast::Expression::ArrayAssignment(name, index, expr) => {
                 let array = self
                     .context
                     .borrow()
@@ -625,8 +625,11 @@ impl Runtime {
             .emitter
             .add_indent_comment_newline(format!("{:?}", statement))?;
         match statement {
-            ast::Statement::VarDeclaration(name, size) => {
+            ast::Statement::VarDeclaration(name, init) => {
                 bail!("VarDeclaration statement not implemented");
+            }
+            ast::Statement::ArrayDeclaration(name, init) => {
+                bail!("ArrayDeclaration statement not implemented");
             }
             ast::Statement::If(cond, then, else_) => {
                 bail!("If statement not implemented");

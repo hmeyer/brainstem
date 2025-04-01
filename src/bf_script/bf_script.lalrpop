@@ -24,7 +24,7 @@ pub Program : Vec<Statement<'input>> = {
 
 Statement: Statement<'input> = {
     "{" <s:Statement+> "}" => Statement::Block(s),
-    VarDeclaration,
+    VarOrArrayDeclaration,
     "if" <c:Expression> "then" "{" <t:Statement*> "}" <e:("else" "{" <Statement*> "}")?> => 
         Statement::If(c, Box::new(Statement::Block(t)), e.map(Statement::Block).map(Box::new)),
     "putc" "(" <Expression> ")" ";" => Statement::PutChar(<>),
@@ -32,14 +32,14 @@ Statement: Statement<'input> = {
     <Expression> ";" => Statement::Expression(<>),
 };
 
-VarDeclaration: Statement<'input> = {
-    "var" <n:Identifier> "=" <i: Expression> ";" => Statement::VarDeclaration(n, vec![i]),
+VarOrArrayDeclaration: Statement<'input> = {
+    "var" <n:Identifier> "=" <i: Expression> ";" => Statement::VarDeclaration(n, i),
     "var" <n:Identifier> "[" "]" "=" "[" <mut i: (<Expression> ",")+> <t:Expression> "]" ";" => {
         i.push(t);
-        Statement::VarDeclaration(n, i)
+        Statement::ArrayDeclaration(n, i)
     },
     "var" <n:Identifier> "[" "]" "=" <i:StringLiteral> ";" =>
-        Statement::VarDeclaration(n, i.chars().map(|c| Expression::Literal(c as i32)).collect()),
+        Statement::ArrayDeclaration(n, i.chars().map(|c| Expression::Literal(c as i32)).collect()),
 };
 
 StringLiteral: &'input str = {
@@ -83,7 +83,7 @@ Expression: Expression<'input> = {
 
     #[precedence(level="8")] #[assoc(side="left")]
     <n:Identifier> <i:("[" <Expression> "]")?> "=" <v:Expression> => match i {
-        Some(index) => Expression::IndexedAssignment(n, Box::new(index), Box::new(v)),
+        Some(index) => Expression::ArrayAssignment(n, Box::new(index), Box::new(v)),
         None => Expression::Assignment(n, Box::new(v)),
     },
 }
@@ -96,7 +96,7 @@ Primary: Expression<'input> = {
     },
     <n:Identifier> <i:("[" <Expression> "]")?> => match i {
         None => Expression::Variable(n),
-        Some(index) => Expression::IndexedVariable(n, Box::new(index))
+        Some(index) => Expression::ArrayLookup(n, Box::new(index))
     },
     "(" <Expression> ")",
 };

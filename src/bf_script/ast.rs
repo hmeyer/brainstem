@@ -1,7 +1,8 @@
 use std::fmt::{Debug, Error, Formatter};
 
 pub enum Statement<'input> {
-    VarDeclaration(&'input str, Vec<Expression<'input>>),
+    VarDeclaration(&'input str, Expression<'input>),
+    ArrayDeclaration(&'input str, Vec<Expression<'input>>),
     If(
         Expression<'input>,
         Box<Statement<'input>>,
@@ -18,11 +19,10 @@ impl Debug for Statement<'_> {
         use self::Statement::*;
         match *self {
             VarDeclaration(n, ref i) => {
-                if i.len() == 1 {
-                    write!(fmt, "var {} = {:?};", n, i[0])
-                } else {
-                    write!(fmt, "var {}[] = {:?};", n, i)
-                }
+                write!(fmt, "var {} = {:?};", n, i)
+            }
+            ArrayDeclaration(n, ref i) => {
+                write!(fmt, "var {}[] = {:?};", n, i)
             }
             If(ref c, ref t, ref e) => match e {
                 Some(e) => write!(fmt, "if {:?} then {:?} else {:?};", c, t, e),
@@ -48,9 +48,9 @@ pub enum Expression<'input> {
     Not(Box<Expression<'input>>),
     Binary(Box<Expression<'input>>, Opcode, Box<Expression<'input>>),
     Variable(&'input str),
-    IndexedVariable(&'input str, Box<Expression<'input>>),
+    ArrayLookup(&'input str, Box<Expression<'input>>),
     Assignment(&'input str, Box<Expression<'input>>),
-    IndexedAssignment(
+    ArrayAssignment(
         &'input str,
         Box<Expression<'input>>,
         Box<Expression<'input>>,
@@ -99,9 +99,9 @@ impl Debug for Expression<'_> {
             Not(ref e) => write!(fmt, "!{:?}", e),
             Binary(ref l, op, ref r) => write!(fmt, "({:?} {:?} {:?})", l, op, r),
             Variable(s) => write!(fmt, "{}", s),
-            IndexedVariable(s, ref e) => write!(fmt, "{}[{:?}]", s, e),
+            ArrayLookup(s, ref i) => write!(fmt, "{}[{:?}]", s, i),
             Assignment(s, ref e) => write!(fmt, "{} = {:?}", s, e),
-            IndexedAssignment(s, ref i, ref e) => write!(fmt, "{}[{:?}] = {:?}", s, i, e),
+            ArrayAssignment(s, ref i, ref e) => write!(fmt, "{}[{:?}] = {:?}", s, i, e),
         }
     }
 }
