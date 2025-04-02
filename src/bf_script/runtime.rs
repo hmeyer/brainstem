@@ -728,7 +728,7 @@ mod tests {
             "#,
         )
         .unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "987654321");
     }
 }
