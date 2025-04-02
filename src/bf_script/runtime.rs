@@ -503,7 +503,34 @@ impl Runtime {
                 }
             }
             ast::Statement::If(cond, then, else_) => {
-                bail!("If statement not implemented");
+                let cond = self.compile_expression(cond)?;
+                let t0 = self.context.add_temp()?;
+                let t1 = self.context.add_temp()?;
+                bf!(&mut self.emitter;
+                    t0[-]+
+                    t1[-]
+                    cond
+                );
+                self.emitter.add_code("[".into())?;
+                self.compile(then)?;
+                bf!(&mut self.emitter;
+                    t0-
+                    cond[t1+cond-]
+                );
+                self.emitter.add_code("]".into())?;
+                // else branch
+                if let Some(else_) = else_ {
+                    bf!(&mut self.emitter;
+                        t1[cond+t1-]
+                        t0
+                    );
+                    self.emitter.add_code("[".into())?;
+                    self.compile(else_)?;
+                    bf!(&mut self.emitter;
+                        t0-
+                    );
+                    self.emitter.add_code("]".into())?;
+                }
             }
             ast::Statement::PutChar(expr) => {
                 let e = self.compile_expression(expr)?;
@@ -730,5 +757,32 @@ mod tests {
         .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "987654321");
+    }
+
+    #[test]
+    fn test_end2end_if_else() {
+        let bf_code = compile_bf_script(
+            r#"
+                if 2 == 1 + 1 then {
+                    putc("A");
+                }
+                if 2 == 1 then {
+                    putc("B");
+                }
+                if 2 == 1 + 1 then {
+                    putc("C");
+                } else {
+                    putc("D");
+                }
+                if 2 == 1 then {
+                    putc("F");
+                } else {
+                    putc("G");
+                }
+            "#,
+        )
+        .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
+        assert_eq!(output, "ACG");
     }
 }
