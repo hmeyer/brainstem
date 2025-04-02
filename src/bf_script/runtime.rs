@@ -511,7 +511,26 @@ impl Runtime {
                 self.emitter.add_code(".".into())?;
             }
             ast::Statement::While(cond, body) => {
-                bail!("While statement not implemented");
+                // We do some extra hoops here, to only add the condition code once.
+                // See: https://esolangs.org/wiki/Brainfuck_algorithms#while_(x)_{_code_}
+                let zero = self.context.add_temp()?;
+                self.emitter.move_to(&zero);
+                self.emitter.add_code("[-]".into())?;
+                let t = self.context.add_temp()?;
+                self.emitter.move_to(&t);
+                self.emitter.add_code("[-]+[".into())?;
+                self.emitter.move_to(&t);
+                self.emitter.add_code("-".into())?;
+                let c = self.compile_expression(cond)?;
+                self.emitter.move_to(&c);
+                self.emitter.add_code("[".into())?;
+                self.compile(&body)?;
+                self.emitter.move_to(&t);
+                self.emitter.add_code("+".into())?;
+                self.emitter.move_to(&zero);
+                self.emitter.add_code("]".into())?;
+                self.emitter.move_to(&t);
+                self.emitter.add_code("]".into())?;
             }
             ast::Statement::Block(statements) => {
                 self.context.borrow_mut().push_scope();
@@ -695,5 +714,21 @@ mod tests {
             bf_code.err().unwrap().to_string(),
             "Variable x not found in context"
         );
+    }
+
+    #[test]
+    fn test_end2end_while() {
+        let bf_code = compile_bf_script(
+            r#"
+                var x = 9;
+                while x {
+                    putc("0" + x);
+                    x = x - 1;
+                }
+            "#,
+        )
+        .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
+        assert_eq!(output, "987654321");
     }
 }
