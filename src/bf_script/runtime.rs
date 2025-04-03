@@ -259,7 +259,28 @@ impl Runtime {
                             t0]);
                     Ok(x)
                 }
-                &ast::Opcode::Mod => unimplemented!("Mod operator not implemented"),
+                &ast::Opcode::Mod => {
+                    let x = self.compile_expression(x)?;
+                    let x = self.wrap_temp(x)?;
+                    let y = self.compile_expression(y)?;
+                    let buffer = self.context.add_temp_with_size(5)?;
+                    let n = buffer.successor(1);
+                    let d = buffer.successor(2);
+                    let r = buffer.successor(3);
+                    let z0 = buffer.successor(0);
+                    let z4 = buffer.successor(4);
+                    let z5 = buffer.successor(5);
+                    self.copy(&*x, &n)?;
+                    self.copy(&*y, &d)?;
+                    bf!(&mut self.emitter;
+                        z0[-]z4[-]z5[-]
+                        n
+                        [>->+<[>]>[<+>-]<<[<]>-]
+                        mv(r, x)
+                        x
+                    );
+                    Ok(x)
+                }
                 &ast::Opcode::Add => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
@@ -638,6 +659,13 @@ mod tests {
         let bf_code = compile_bf_script(r#"putc("0" + 15 / 3);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "5");
+    }
+
+    #[test]
+    fn test_end2end_mod() {
+        let bf_code = compile_bf_script(r#"putc("0" + 19 % 12);putc("0" + 23 % 7);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
+        assert_eq!(output, "72");
     }
 
     #[test]
