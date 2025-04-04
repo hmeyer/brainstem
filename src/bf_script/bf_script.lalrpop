@@ -86,6 +86,7 @@ Expression: Expression<'input> = {
         Some(index) => Expression::ArrayAssignment(n, Box::new(index), Box::new(v)),
         None => Expression::Assignment(n, Box::new(v)),
     },
+    "LINMEM" "[" <a:Expression> "]" "=" <v:Expression> => Expression::MemoryWrite(Box::new(a), Box::new(v)),
 }
 
 Primary: Expression<'input> = {
@@ -98,6 +99,7 @@ Primary: Expression<'input> = {
         None => Expression::Variable(n),
         Some(index) => Expression::ArrayLookup(n, Box::new(index))
     },
+    "LINMEM" "[" <Expression> "]" => Expression::MemoryRead(Box::new(<>)), 
     "(" <Expression> ")",
 };
 

@@ -170,4 +170,26 @@ mod tests {
             "[while ((foo / bar)) {\nx;\n}]"
         );
     }
+
+    #[test]
+    fn test_mem_read() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new().parse("var x = LINMEM[bar];").unwrap()
+            ),
+            "[var x = MemoryRead(addr=bar);]"
+        );
+    }
+
+    #[test]
+    fn test_mem_write() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new().parse("LINMEM[bar] = x;").unwrap()
+            ),
+            "[MemoryWrite(addr=bar; value=x);]"
+        );
+    }
 }

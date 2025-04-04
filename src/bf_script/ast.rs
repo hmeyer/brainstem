@@ -60,6 +60,8 @@ pub enum Expression<'input> {
         Box<Expression<'input>>,
         Box<Expression<'input>>,
     ),
+    MemoryRead(Box<Expression<'input>>),
+    MemoryWrite(Box<Expression<'input>>, Box<Expression<'input>>),
 }
 
 #[derive(Copy, Clone)]
@@ -109,6 +111,8 @@ impl Debug for Expression<'_> {
             ArrayAssignment(s, ref i, ref e) => {
                 write!(fmt, "ArrayAssignment({}; {:?}; {:?})", s, i, e)
             }
+            MemoryRead(ref e) => write!(fmt, "MemoryRead(addr={:?})", e),
+            MemoryWrite(ref a, ref e) => write!(fmt, "MemoryWrite(addr={:?}; value={:?})", a, e),
         }
     }
 }

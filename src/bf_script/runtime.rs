@@ -499,6 +499,12 @@ impl Runtime {
                 self.copy(&data, &result)?;
                 Ok(value)
             }
+            ast::Expression::MemoryRead(addr_expr) => {
+                unimplemented!("MemoryRead not implemented yet");
+            }
+            ast::Expression::MemoryWrite(addr_expr, value_expr) => {
+                unimplemented!("MemoryWrite not implemented yet");
+            }
         }
     }
 
