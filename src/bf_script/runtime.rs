@@ -10,6 +10,7 @@ use std::fmt::{Debug, Error, Formatter};
 use std::rc::{Rc, Weak};
 
 static VALID_BF_CHARS: &str = "+-<>[],.";
+static LINMEM: &str = "__LINMEM__";
 
 #[derive(Debug)]
 enum Item {
@@ -154,8 +155,10 @@ macro_rules! bf_impl {
 
 impl Runtime {
     pub fn new() -> Self {
+        let mut ctx = Context::new();
+        ctx.add_with_size(LINMEM, 4).unwrap();
         Self {
-            context: Context::new(),
+            context: ctx,
             current_address: 0,
             emitter: Emitter::new(),
         }
@@ -455,7 +458,6 @@ impl Runtime {
                     .borrow()
                     .get_variable(name)
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
-                let result = self.context.add_temp()?;
                 let index = self.compile_expression(index)?;
                 let value = self.compile_expression(expr)?;
                 let before_head = array.predecessor();
@@ -496,7 +498,6 @@ impl Runtime {
                         ]
                     );
                 }
-                self.copy(&data, &result)?;
                 Ok(value)
             }
             ast::Expression::MemoryRead(addr_expr) => {
@@ -624,7 +625,7 @@ mod tests {
         runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(),
-            "putc(3);\n  3\n  creating literal 3 into __temp0{0}[-]+++\n."
+            "putc(3);\n  3\n  creating literal 3 into __temp0{4}>>>>[-]+++\n."
         );
     }
 
@@ -635,7 +636,7 @@ mod tests {
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(),
-            "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0{0}[-]++\n  >[-]+<[->-<]>[<+>-]\n<."
+            "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0{4}>>>>[-]++\n  >[-]+<[->-<]>[<+>-]\n<."
         );
     }
 
@@ -747,8 +748,8 @@ mod tests {
         let bf_code =
             compile_bf_script(r#"
             var s[] = "Hello "; putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]); putc(s[5]);
-            s[0] = "W"; s[1] = "o"; s[2] = "r"; s[3] = "l"; s[4] = "d";
-            putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]);
+            s[4] = "W"; s[3] = "o"; s[2] = "r"; s[1] = "l"; s[0] = "d";
+            putc(s[4]); putc(s[3]); putc(s[2]); putc(s[1]); putc(s[0]);
         "#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
         assert_eq!(output, "Hello World");
@@ -818,5 +819,32 @@ mod tests {
         .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "ACG");
+    }
+    #[test]
+    fn test_end2end_linmem_simple() {
+        let bf_code = compile_bf_script(r#"LINMEM[0] = 7; putc("0" + LINMEM[0]);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "7");
+    }
+    #[test]
+    fn test_end2end_linmem() {
+        let bf_code =
+            compile_bf_script(r#"
+            LINMEM[0] = "H";
+            LINMEM[1] = "e";
+            LINMEM[2] = "l";
+            LINMEM[3] = "l";
+            LINMEM[4] = "o";
+            LINMEM[5] = " ";
+            putc(LINMEM[0]); putc(LINMEM[1]); putc(LINMEM[2]); putc(LINMEM[3]); putc(LINMEM[4]); putc(LINMEM[5]);
+            LINMEM[4] = "W";
+            LINMEM[3] = "o";
+            LINMEM[2] = "r";
+            LINMEM[1] = "l";
+            LINMEM[0] = "d";
+            putc(LINMEM[4]); putc(LINMEM[3]); putc(LINMEM[2]); putc(LINMEM[1]); putc(LINMEM[0]);
+        "#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
+        assert_eq!(output, "Hello World");
     }
 }
