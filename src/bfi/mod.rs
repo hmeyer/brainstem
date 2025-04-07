@@ -111,7 +111,7 @@ where
     let mut output_buffer = Vec::new();
     let mut writer = Cursor::new(&mut output_buffer);
     run_program::<T>(program, &mut reader, &mut writer, max_steps)?;
-    Ok(String::from_utf8(output_buffer).unwrap())
+    Ok(output_buffer.iter().map(|&c| c as char).collect::<String>())
 }
 
 #[cfg(test)]
