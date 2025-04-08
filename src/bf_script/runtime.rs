@@ -2,11 +2,9 @@ use super::{
     ast, context::AsVariableLikeRef, context::Context, context::ContextExt, context::Successor,
     context::Variable, context::VariableExt, context::VariableLike, parser::ProgramParser,
 };
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use std::cell::RefCell;
-use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
-use std::fmt::{Debug, Error, Formatter};
+use std::fmt::Debug;
 use std::rc::{Rc, Weak};
 
 static VALID_BF_CHARS: &str = "+-<>[],.";
@@ -126,40 +124,96 @@ impl Emitter {
 #[derive(Debug)]
 struct Runtime {
     context: Rc<RefCell<Context>>,
-    current_address: isize,
     emitter: Emitter,
 }
 
 macro_rules! bf {
-    ($emitter:expr; $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; $($rest)*); emitter.newline(); };
+    ($emitter:expr; $($rest:tt)*) => {
+            let mut emitter=$emitter;
+            bf_impl!(&mut emitter; $($rest)*);
+            emitter.newline();
+    };
 }
 
 macro_rules! bf_impl {
-    ($emitter:expr; mv($src:ident, $dst:ident) $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; $dst[-]$src[$dst+$src-] $($rest)*);};
-    ($emitter:expr; $v:ident $($rest:tt)*) => {let mut emitter=$emitter; emitter.move_to($v.as_variable_like_ref()); bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; + $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("+".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; - $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("-".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; . $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(".".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; , $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(",".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; .. $($rest:tt)*) => {let mut emitter=$emitter; bf_impl!(&mut emitter; . . $($rest)*); };
-    ($emitter:expr; < $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("<".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; << $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("<<".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; > $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(">".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; >> $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code(">>".into())?; bf_impl!(&mut emitter; $($rest)*); };
-    ($emitter:expr; -> $($rest:tt)*) => {let mut emitter=$emitter; emitter.add_code("->".into())?; bf_impl!(&mut emitter; $($rest)*); };
+    ($emitter:expr; mv($src:ident, $dst:ident) $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        bf_impl!(&mut emitter; $dst[-]$src[$dst+$src-] $($rest)*);
+    };
+    ($emitter:expr; $v:ident $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.move_to($v.as_variable_like_ref());
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; + $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code("+".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; - $($rest:tt)*) => {
+        #[allow(unused_mut)]
+        let mut emitter=$emitter;
+        emitter.add_code("-".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; . $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code(".".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; , $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code(",".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; .. $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        bf_impl!(&mut emitter; . . $($rest)*);
+    };
+    ($emitter:expr; < $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code("<".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; << $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code("<<".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; > $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code(">".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; >> $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code(">>".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
+    ($emitter:expr; -> $($rest:tt)*) => {
+        let mut emitter=$emitter;
+        emitter.add_code("->".into())?;
+        bf_impl!(&mut emitter; $($rest)*);
+    };
     ($emitter:expr; [ $($body:tt)* ] $($rest:tt)* ) => {
-        let mut emitter=$emitter; emitter.add_code("[".into())?; bf_impl!(&mut emitter; $($body)*); emitter.add_code("]".into())?; bf_impl!(&mut emitter; $($rest)*);
+        #[allow(unused_mut)]
+        {
+            let mut emitter=$emitter;
+            emitter.add_code("[".into())?;
+            bf_impl!(&mut emitter; $($body)*);
+            emitter.add_code("]".into())?;
+            bf_impl!(&mut emitter; $($rest)*);
+        }
     };
     ($emitter:expr; ) => { };
 }
 
 impl Runtime {
     pub fn new() -> Self {
-        let mut ctx = Context::new();
+        let ctx = Context::new();
         ctx.add_with_size(LINMEM, 4).unwrap();
         Self {
             context: ctx,
-            current_address: 0,
             emitter: Emitter::new(),
         }
     }

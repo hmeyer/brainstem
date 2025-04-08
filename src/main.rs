@@ -3,7 +3,6 @@ use clap::{Parser, ValueEnum};
 use rbfc::{compile_bf_script, run_program_from_str};
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::path::PathBuf;
 
 #[derive(ValueEnum, Debug, Clone)]
 enum IntegerType {
@@ -46,7 +45,6 @@ struct Args {
     max_steps: Option<usize>,
 }
 
-#[cfg(not(test))]
 fn main() -> Result<()> {
     let args = if std::env::args().len() <= 1 {
         // Keine Argumente übergeben, Hilfe anzeigen und beenden
