@@ -194,14 +194,15 @@ impl Runtime {
         Ok(t)
     }
 
-    fn mem_lookup(&mut self, array: Successor, index: &ast::Expression) -> Result<Rc<Variable>> {
+    fn mem_lookup(&mut self, mem_control_block: Successor, index: &ast::Expression) -> Result<Rc<Variable>> {
         let result = self.context.add_temp()?;
         let index = self.compile_expression(index)?;
-        let memory_after = array.successor(3);
-        let data = array.successor(2);
-        let index2 = array.successor(1);
-        let index1 = array.successor(0);
-        let memory_before = array.successor(-1);
+
+        let memory_before = mem_control_block.successor(-1);
+        let index1 = mem_control_block.successor(0);
+        let index2 = mem_control_block.successor(1);
+        let data = mem_control_block.successor(2);
+        let memory_after = mem_control_block.successor(3);
 
         // We use this structure to move from the tail into the memory:
         // MEMORY <- moving direction <- memory_before | index1 | index2 | data | memory_after
@@ -255,18 +256,19 @@ impl Runtime {
 
     fn mem_write(
         &mut self,
-        array: Successor,
+        mem_control_block: Successor,
         index: &ast::Expression,
         value: &ast::Expression,
     ) -> Result<Rc<Variable>> {
         let index = self.compile_expression(index)?;
         let value = self.compile_expression(value)?;
-        let memory_after = array.successor(4);
-        let space = array.successor(3);
-        let data = array.successor(2);
-        let index2 = array.successor(1);
-        let index1 = array.successor(0);
-        let memory_before = array.successor(-1);
+
+        let memory_before = mem_control_block.successor(-1);
+        let index1 = mem_control_block.successor(0);
+        let index2 = mem_control_block.successor(1);
+        let data = mem_control_block.successor(2);
+        let space = mem_control_block.successor(3);
+        let memory_after = mem_control_block.successor(4);
 
         // We use this structure to move from the tail into the memory:
         // MEMORY <- moving direction <- memory_before | index1 | index2 | data | space | memory_after
