@@ -122,7 +122,7 @@ impl<'a> AsVariableLikeRef<'a> for Rc<Variable> {
     type Target = Variable; // The T for copy will be Variable
     fn as_variable_like_ref(&'a self) -> &'a Variable {
         // Dereference the Rc to get the underlying Variable
-        &**self // Equivalent to self.as_ref() or &*self.deref()
+        self // Equivalent to self.as_ref() or &*self.deref()
     }
 }
 

@@ -98,10 +98,14 @@ impl Emitter {
                         Item::MoveTo(new_address) => {
                             let diff = new_address - address;
                             address = *new_address;
-                            if diff > 0 {
-                                pieces.push(">".repeat(diff as usize));
-                            } else if diff < 0 {
-                                pieces.push("<".repeat(-diff as usize));
+                            match diff.cmp(&0) {
+                                std::cmp::Ordering::Equal => {}
+                                std::cmp::Ordering::Greater => {
+                                    pieces.push(">".repeat(diff as usize));
+                                }
+                                std::cmp::Ordering::Less => {
+                                    pieces.push("<".repeat(-diff as usize));
+                                }
                             }
                         }
                         Item::Verbatim(code) => pieces.push(code.clone()),
@@ -397,8 +401,8 @@ impl Runtime {
                 );
                 Ok(x)
             }
-            ast::Expression::Binary(x, opcode, y) => match opcode {
-                &ast::Opcode::Mul => {
+            ast::Expression::Binary(x, opcode, y) => match *opcode {
+                ast::Opcode::Mul => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -414,7 +418,7 @@ impl Runtime {
                     );
                     Ok(x)
                 }
-                &ast::Opcode::Div => {
+                ast::Opcode::Div => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -441,7 +445,7 @@ impl Runtime {
                             t0]);
                     Ok(x)
                 }
-                &ast::Opcode::Mod => {
+                ast::Opcode::Mod => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -463,7 +467,7 @@ impl Runtime {
                     );
                     Ok(x)
                 }
-                &ast::Opcode::Add => {
+                ast::Opcode::Add => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -471,7 +475,7 @@ impl Runtime {
                     bf!(&mut self.emitter; y[-x+y] );
                     Ok(x)
                 }
-                &ast::Opcode::Sub => {
+                ast::Opcode::Sub => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -479,7 +483,7 @@ impl Runtime {
                     bf!(&mut self.emitter; y[-x-y] );
                     Ok(x)
                 }
-                &ast::Opcode::And => {
+                ast::Opcode::And => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -494,7 +498,7 @@ impl Runtime {
                     );
                     Ok(z)
                 }
-                &ast::Opcode::Or => {
+                ast::Opcode::Or => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -507,7 +511,7 @@ impl Runtime {
                     );
                     Ok(z)
                 }
-                &ast::Opcode::Lt => {
+                ast::Opcode::Lt => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -524,7 +528,7 @@ impl Runtime {
                     );
                     Ok(x)
                 }
-                &ast::Opcode::Le => {
+                ast::Opcode::Le => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -541,7 +545,7 @@ impl Runtime {
                     );
                     Ok(x)
                 }
-                &ast::Opcode::Eq => {
+                ast::Opcode::Eq => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -551,7 +555,7 @@ impl Runtime {
                     );
                     Ok(x)
                 }
-                &ast::Opcode::Ne => {
+                ast::Opcode::Ne => {
                     let x = self.compile_expression(x)?;
                     let x = self.wrap_temp(x)?;
                     let y = self.compile_expression(y)?;
@@ -579,7 +583,7 @@ impl Runtime {
                     .borrow()
                     .get_variable(name)
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
-                self.mem_lookup(array.successor(array.size() - 4), &*index)
+                self.mem_lookup(array.successor(array.size() - 4), index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
@@ -597,7 +601,7 @@ impl Runtime {
                     .borrow()
                     .get_variable(name)
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
-                self.mem_write(array.successor(array.size() - 4), &*index, &*expr)
+                self.mem_write(array.successor(array.size() - 4), index, expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 let mem_control_block = self
@@ -687,7 +691,7 @@ impl Runtime {
                 let c = self.compile_expression(cond)?;
                 self.emitter.move_to(&c);
                 self.emitter.add_code("[".into())?;
-                self.compile(&body)?;
+                self.compile(body)?;
                 self.emitter.move_to(&t);
                 self.emitter.add_code("+".into())?;
                 self.emitter.move_to(&zero);
