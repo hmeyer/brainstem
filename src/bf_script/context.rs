@@ -61,6 +61,7 @@ impl Drop for Variable {
 pub trait VariableExt {
     fn predecessor(&self) -> Successor;
     fn successor(&self, offset: usize) -> Successor;
+    fn size(&self) -> usize;
 }
 
 impl VariableExt for Rc<Variable> {
@@ -75,6 +76,9 @@ impl VariableExt for Rc<Variable> {
             original: self.clone(),
             offset: offset as isize,
         }
+    }
+    fn size(&self) -> usize {
+        self.size
     }
 }
 

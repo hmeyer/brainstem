@@ -402,12 +402,14 @@ impl Runtime {
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
                 let result = self.context.add_temp()?;
                 let index = self.compile_expression(index)?;
-                let before_head = array.predecessor();
-                let space = array.successor(0);
-                let index1 = array.successor(1);
-                let index2 = array.successor(2);
-                let data = array.successor(3);
-                let after_head = array.successor(4);
+                let len = array.size();
+
+                let before_head = array.successor(len);
+                let space = array.successor(len - 1);
+                let index1 = array.successor(len - 2);
+                let index2 = array.successor(len - 3);
+                let data = array.successor(len - 4);
+                let after_head = array.successor(len - 5);
                 self.copy(&*index, &index1)?;
                 self.copy(&*index, &index2)?;
                 {
@@ -419,12 +421,22 @@ impl Runtime {
                             mv(after_head, space)
                             mv(index2, data)
                             mv(index1, index2)
-                            >
+                            <
                             index1
                         ]
                     );
                 }
-                self.copy(&after_head, &data)?;
+                {
+                    let _indent = self.emitter.add_indent_comment_newline(format!(
+                        "copy {:?} to {:?} using {:?} (already zero) as temp",
+                        after_head, data, index1
+                    ))?;
+                    bf!(&mut self.emitter;
+                        data[-]
+                        after_head[data+index1+after_head-]
+                        index1[after_head+index1-]
+                    );
+                }
                 {
                     let _indent = self
                         .emitter
@@ -434,7 +446,7 @@ impl Runtime {
                             mv(index2, index1)
                             mv(data, index2)
                             mv(before_head, data)
-                            <
+                            >
                             index2
                         ]
                     );
@@ -460,13 +472,14 @@ impl Runtime {
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
                 let index = self.compile_expression(index)?;
                 let value = self.compile_expression(expr)?;
-                let before_head = array.predecessor();
-                let space = array.successor(0);
-                let index1 = array.successor(1);
-                let index2 = array.successor(2);
-                let data = array.successor(3);
+                let len = array.size();
+                let before_head = array.successor(len);
+                let space = array.successor(len - 1);
+                let index1 = array.successor(len - 2);
+                let index2 = array.successor(len - 3);
+                let data = array.successor(len - 4);
                 self.copy(&value, &data)?;
-                let after_head = array.successor(4);
+                let after_head = array.successor(len - 5);
                 self.copy(&index, &index1)?;
                 self.copy(&index, &index2)?;
                 {
@@ -479,12 +492,12 @@ impl Runtime {
                             mv(data, after_head)
                             mv(index2, data)
                             mv(index1, index2)
-                            >
+                            <
                             index1
                         ]
                     );
                 }
-                self.copy(&data, &after_head)?;
+                bf!(&mut self.emitter; mv(data, after_head));
                 {
                     let _indent = self
                         .emitter
@@ -493,7 +506,7 @@ impl Runtime {
                         index2[-
                             mv(index2, index1)
                             mv(before_head, data)
-                            <
+                            >
                             index2
                         ]
                     );
@@ -521,12 +534,11 @@ impl Runtime {
             }
             ast::Statement::ArrayDeclaration(name, init) => {
                 let array_head_size = 4;
-                let a = self
-                    .context
-                    .add_with_size(name, init.len() + array_head_size)?;
+                let len = init.len();
+                let a = self.context.add_with_size(name, len + array_head_size)?;
                 for (i, expr) in init.iter().enumerate() {
                     let value = self.compile_expression(expr)?;
-                    let index = a.successor(i + array_head_size);
+                    let index = a.successor(len - 1 - i);
                     self.copy(&value, &index)?;
                 }
             }
@@ -745,14 +757,21 @@ mod tests {
 
     #[test]
     fn test_end2end_array() {
-        let bf_code =
-            compile_bf_script(r#"
-            var s[] = "Hello "; putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]); putc(s[5]);
+        let bf_code = compile_bf_script(
+            r#"
+            var s[] = "Hello "; 
+            putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]); putc(s[5]);
+            putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]); putc(s[5]);
             s[4] = "W"; s[3] = "o"; s[2] = "r"; s[1] = "l"; s[0] = "d";
             putc(s[4]); putc(s[3]); putc(s[2]); putc(s[1]); putc(s[0]);
-        "#).unwrap();
+            putc(s[5]);
+            putc(s[4]); putc(s[3]); putc(s[2]); putc(s[1]); putc(s[0]); 
+        "#,
+        )
+        .unwrap();
+        println!("{}", bf_code);
         let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
-        assert_eq!(output, "Hello World");
+        assert_eq!(output, "Hello Hello World World");
     }
 
     #[test]
