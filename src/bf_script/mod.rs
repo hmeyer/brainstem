@@ -1,6 +1,8 @@
 mod ast;
 mod context;
-mod runtime;
+pub mod runtime;
+
+pub use runtime::compile_bf_script;
 
 use lalrpop_util::lalrpop_mod;
 
