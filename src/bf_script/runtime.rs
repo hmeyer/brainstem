@@ -1,6 +1,6 @@
 use super::{
-    ast, context::AsVariableLikeRef, context::Context, context::ContextExt, context::Variable,
-    context::VariableExt, context::VariableLike, parser::ProgramParser,
+    ast, context::AsVariableLikeRef, context::Context, context::ContextExt, context::Successor,
+    context::Variable, context::VariableExt, context::VariableLike, parser::ProgramParser,
 };
 use anyhow::{Result, anyhow, bail};
 use std::cell::RefCell;
@@ -192,6 +192,125 @@ impl Runtime {
         let t = self.context.add_temp()?;
         self.copy(&*var, &*t)?;
         Ok(t)
+    }
+
+    fn mem_lookup(&mut self, array: Successor, index: &ast::Expression) -> Result<Rc<Variable>> {
+        let result = self.context.add_temp()?;
+        let index = self.compile_expression(index)?;
+        let memory_after = array.successor(3);
+        let data = array.successor(2);
+        let index2 = array.successor(1);
+        let index1 = array.successor(0);
+        let memory_before = array.successor(-1);
+
+        // We use this structure to move from the tail into the memory:
+        // MEMORY <- moving direction <- memory_before | index1 | index2 | data | memory_after
+
+        self.copy(&*index, &index1)?;
+        self.copy(&*index, &index2)?;
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head to array index".into())?;
+            bf!(&mut self.emitter;
+                index1[-
+                    mv(memory_before, data)
+                    mv(index1, memory_before)
+                    mv(index2, index1)
+                    index1
+                    <
+                ]
+            );
+        }
+        {
+            let _indent = self.emitter.add_indent_comment_newline(format!(
+                "copy {:?} to {:?} using {:?} (already zero) as temp",
+                memory_before, data, index1
+            ))?;
+            bf!(&mut self.emitter;
+                data[-]
+                memory_before[data+index1+memory_before-]
+                index1[memory_before+index1-]
+            );
+        }
+        // Now we move back:
+        // MEMORY -> moving direction -> memory_before | index1 | index2 | data | memory_after | more MEMORY
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head back".into())?;
+            bf!(&mut self.emitter;
+                index2[-
+                    mv(memory_after, index1)
+                    mv(data, memory_after)
+                    mv(index2, data)
+                    index2
+                    >
+                ]
+            );
+        }
+        self.copy(&data, &result)?;
+        Ok(result)
+    }
+
+    fn mem_write(
+        &mut self,
+        array: Successor,
+        index: &ast::Expression,
+        value: &ast::Expression,
+    ) -> Result<Rc<Variable>> {
+        let index = self.compile_expression(index)?;
+        let value = self.compile_expression(value)?;
+        let memory_after = array.successor(4);
+        let space = array.successor(3);
+        let data = array.successor(2);
+        let index2 = array.successor(1);
+        let index1 = array.successor(0);
+        let memory_before = array.successor(-1);
+
+        // We use this structure to move from the tail into the memory:
+        // MEMORY <- moving direction <- memory_before | index1 | index2 | data | space | memory_after
+
+        self.copy(&value, &data)?;
+        self.copy(&index, &index1)?;
+        self.copy(&index, &index2)?;
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head to array index".into())?;
+            bf!(&mut self.emitter;
+                index1[-
+                    mv(memory_before, space)
+                    mv(index1, memory_before)
+                    mv(index2, index1)
+                    mv(data, index2)
+                    index1
+                    <
+                ]
+            );
+        }
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline(format!("move {:?} to {:?}", data, memory_before))?;
+            bf!(&mut self.emitter; mv(data, memory_before));
+        }
+        // Now we move back:
+        // MEMORY -> moving direction -> memory_before | index1 | index2 | data | space | memory_after | more MEMORY
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head back".into())?;
+            bf!(&mut self.emitter;
+                index2[-
+                    mv(memory_after, index1)
+                    mv(index2, data)
+                    index2
+                    >
+                ]
+            );
+        }
+        Ok(value)
     }
 
     fn compile_expression(&mut self, expr: &ast::Expression) -> Result<Rc<Variable>> {
@@ -400,64 +519,7 @@ impl Runtime {
                     .borrow()
                     .get_variable(name)
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
-                let result = self.context.add_temp()?;
-                let index = self.compile_expression(index)?;
-                let len = array.size();
-
-                let memory_after = array.successor(len - 1);
-                let data = array.successor(len - 2);
-                let index2 = array.successor(len - 3);
-                let index1 = array.successor(len - 4);
-                let memory_before = array.successor(len - 5);
-
-                // We use this structure to move from the tail into the memory:
-                // MEMORY <- moving direction <- memory_before | index1 | index2 | data | memory_after
-
-                self.copy(&*index, &index1)?;
-                self.copy(&*index, &index2)?;
-                {
-                    let _indent = self
-                        .emitter
-                        .add_indent_comment_newline("move head to array index".into())?;
-                    bf!(&mut self.emitter;
-                        index1[-
-                            mv(memory_before, data)
-                            mv(index1, memory_before)
-                            mv(index2, index1)
-                            index1
-                            <
-                        ]
-                    );
-                }
-                {
-                    let _indent = self.emitter.add_indent_comment_newline(format!(
-                        "copy {:?} to {:?} using {:?} (already zero) as temp",
-                        memory_before, data, index1
-                    ))?;
-                    bf!(&mut self.emitter;
-                        data[-]
-                        memory_before[data+index1+memory_before-]
-                        index1[memory_before+index1-]
-                    );
-                }
-                // Now we move back:
-                // MEMORY -> moving direction -> memory_before | index1 | index2 | data | memory_after | more MEMORY
-                {
-                    let _indent = self
-                        .emitter
-                        .add_indent_comment_newline("move head back".into())?;
-                    bf!(&mut self.emitter;
-                        index2[-
-                            mv(memory_after, index1)
-                            mv(data, memory_after)
-                            mv(index2, data)
-                            index2
-                            >
-                        ]
-                    );
-                }
-                self.copy(&data, &result)?;
-                Ok(result)
+                self.mem_lookup(array.successor(array.size() - 4), &*index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
@@ -475,60 +537,7 @@ impl Runtime {
                     .borrow()
                     .get_variable(name)
                     .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
-                let index = self.compile_expression(index)?;
-                let value = self.compile_expression(expr)?;
-                let len = array.size();
-                let memory_after = array.successor(len);
-                let space = array.successor(len - 1);
-                let data = array.successor(len - 2);
-                let index2 = array.successor(len - 3);
-                let index1 = array.successor(len - 4);
-                let memory_before = array.successor(len - 5);
-
-                // We use this structure to move from the tail into the memory:
-                // MEMORY <- moving direction <- memory_before | index1 | index2 | data | space | memory_after
-
-                self.copy(&value, &data)?;
-                self.copy(&index, &index1)?;
-                self.copy(&index, &index2)?;
-                {
-                    let _indent = self
-                        .emitter
-                        .add_indent_comment_newline("move head to array index".into())?;
-                    bf!(&mut self.emitter;
-                        index1[-
-                            mv(memory_before, space)
-                            mv(index1, memory_before)
-                            mv(index2, index1)
-                            mv(data, index2)
-                            index1
-                            <
-                        ]
-                    );
-                }
-                {
-                    let _indent = self.emitter.add_indent_comment_newline(format!(
-                        "move {:?} to {:?}",
-                        data, memory_before
-                    ))?;
-                    bf!(&mut self.emitter; mv(data, memory_before));
-                }
-                // Now we move back:
-                // MEMORY -> moving direction -> memory_before | index1 | index2 | data | space | memory_after | more MEMORY
-                {
-                    let _indent = self
-                        .emitter
-                        .add_indent_comment_newline("move head back".into())?;
-                    bf!(&mut self.emitter;
-                        index2[-
-                            mv(memory_after, index1)
-                            mv(index2, data)
-                            index2
-                            >
-                        ]
-                    );
-                }
-                Ok(value)
+                self.mem_write(array.successor(array.size() - 4), &*index, &*expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 unimplemented!("MemoryRead not implemented yet");

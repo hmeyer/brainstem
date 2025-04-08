@@ -59,18 +59,11 @@ impl Drop for Variable {
 }
 
 pub trait VariableExt {
-    fn predecessor(&self) -> Successor;
     fn successor(&self, offset: usize) -> Successor;
     fn size(&self) -> usize;
 }
 
 impl VariableExt for Rc<Variable> {
-    fn predecessor(&self) -> Successor {
-        Successor {
-            original: self.clone(),
-            offset: -1,
-        }
-    }
     fn successor(&self, offset: usize) -> Successor {
         Successor {
             original: self.clone(),
@@ -85,6 +78,15 @@ impl VariableExt for Rc<Variable> {
 pub struct Successor {
     original: Rc<Variable>,
     offset: isize,
+}
+
+impl Successor {
+    pub fn successor(&self, offset: isize) -> Self {
+        Successor {
+            original: self.original.clone(),
+            offset: self.offset + offset,
+        }
+    }
 }
 
 impl Debug for Successor {
@@ -110,7 +112,6 @@ pub trait AsVariableLikeRef<'a> {
     // Associated type: The concrete type T that implements VariableLike
     // We need this because copy is generic over T, not dyn VariableLike
     type Target: VariableLike + 'a;
-
     fn as_variable_like_ref(&'a self) -> &'a Self::Target;
 }
 
