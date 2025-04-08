@@ -194,7 +194,11 @@ impl Runtime {
         Ok(t)
     }
 
-    fn mem_lookup(&mut self, mem_control_block: Successor, index: &ast::Expression) -> Result<Rc<Variable>> {
+    fn mem_lookup(
+        &mut self,
+        mem_control_block: Successor,
+        index: &ast::Expression,
+    ) -> Result<Rc<Variable>> {
         let result = self.context.add_temp()?;
         let index = self.compile_expression(index)?;
 
@@ -542,10 +546,20 @@ impl Runtime {
                 self.mem_write(array.successor(array.size() - 4), &*index, &*expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
-                unimplemented!("MemoryRead not implemented yet");
+                let mem_control_block = self
+                    .context
+                    .borrow()
+                    .get_variable(LINMEM)
+                    .ok_or_else(|| anyhow!("Variable {} not found in context", LINMEM))?;
+                self.mem_lookup(mem_control_block.successor(0), addr_expr)
             }
             ast::Expression::MemoryWrite(addr_expr, value_expr) => {
-                unimplemented!("MemoryWrite not implemented yet");
+                let mem_control_block = self
+                    .context
+                    .borrow()
+                    .get_variable(LINMEM)
+                    .ok_or_else(|| anyhow!("Variable {} not found in context", LINMEM))?;
+                self.mem_write(mem_control_block.successor(0), addr_expr, value_expr)
             }
         }
     }
@@ -867,31 +881,33 @@ mod tests {
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "ACG");
     }
-    // #[test]
-    // fn test_end2end_linmem_simple() {
-    //     let bf_code = compile_bf_script(r#"LINMEM[0] = 7; putc("0" + LINMEM[0]);"#).unwrap();
-    //     let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
-    //     assert_eq!(output, "7");
-    // }
-    // #[test]
-    // fn test_end2end_linmem() {
-    //     let bf_code =
-    //         compile_bf_script(r#"
-    //         LINMEM[0] = "H";
-    //         LINMEM[1] = "e";
-    //         LINMEM[2] = "l";
-    //         LINMEM[3] = "l";
-    //         LINMEM[4] = "o";
-    //         LINMEM[5] = " ";
-    //         putc(LINMEM[0]); putc(LINMEM[1]); putc(LINMEM[2]); putc(LINMEM[3]); putc(LINMEM[4]); putc(LINMEM[5]);
-    //         LINMEM[4] = "W";
-    //         LINMEM[3] = "o";
-    //         LINMEM[2] = "r";
-    //         LINMEM[1] = "l";
-    //         LINMEM[0] = "d";
-    //         putc(LINMEM[4]); putc(LINMEM[3]); putc(LINMEM[2]); putc(LINMEM[1]); putc(LINMEM[0]);
-    //     "#).unwrap();
-    //     let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
-    //     assert_eq!(output, "Hello World");
-    // }
+
+    #[test]
+    fn test_end2end_linmem_simple() {
+        let bf_code = compile_bf_script(r#"LINMEM[0] = 7; putc("0" + LINMEM[0]);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "7");
+    }
+
+    #[test]
+    fn test_end2end_linmem() {
+        let bf_code =
+            compile_bf_script(r#"
+            LINMEM[0] = "H";
+            LINMEM[1] = "e";
+            LINMEM[2] = "l";
+            LINMEM[3] = "l";
+            LINMEM[4] = "o";
+            LINMEM[5] = " ";
+            putc(LINMEM[0]); putc(LINMEM[1]); putc(LINMEM[2]); putc(LINMEM[3]); putc(LINMEM[4]); putc(LINMEM[5]);
+            LINMEM[4] = "W";
+            LINMEM[3] = "o";
+            LINMEM[2] = "r";
+            LINMEM[1] = "l";
+            LINMEM[0] = "d";
+            putc(LINMEM[4]); putc(LINMEM[3]); putc(LINMEM[2]); putc(LINMEM[1]); putc(LINMEM[0]);
+        "#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
+        assert_eq!(output, "Hello World");
+    }
 }
