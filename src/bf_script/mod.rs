@@ -194,4 +194,41 @@ mod tests {
             "[MemoryWrite(addr=bar; value=x);]"
         );
     }
+
+    #[test]
+    fn test_push_stack_frame() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new()
+                    .parse("PushStackFrame(foo=bar, x=1+2);")
+                    .unwrap()
+            ),
+            "[PushStackFrame(foo=bar; x=(1 ➕ 2));]"
+        );
+    }
+
+    #[test]
+    fn test_pop_stack_frame() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new().parse("PopStackFrame;").unwrap()
+            ),
+            "[PopStackFrame;]"
+        );
+    }
+
+    #[test]
+    fn test_move_to_stack_frame_below() {
+        assert_eq!(
+            format!(
+                "{:?}",
+                ProgramParser::new()
+                    .parse("MoveToStackFrameBelow(foo);")
+                    .unwrap()
+            ),
+            "[MoveToStackFrameBelow(foo);]"
+        );
+    }
 }

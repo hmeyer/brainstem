@@ -12,6 +12,9 @@ pub enum Statement<'input> {
     While(Expression<'input>, Box<Statement<'input>>),
     Block(Vec<Statement<'input>>),
     Expression(Expression<'input>),
+    PushStackFrame(Vec<(&'input str, Expression<'input>)>),
+    PopStackFrame,
+    MoveToStackFrameBelow(&'input str),
 }
 
 impl Debug for Statement<'_> {
@@ -43,6 +46,16 @@ impl Debug for Statement<'_> {
                 write!(fmt, "}}")
             }
             Expression(ref e) => write!(fmt, "{:?};", e),
+            PushStackFrame(ref m) => {
+                let initializers = m
+                    .iter()
+                    .map(|(k, v)| format!("{}={:?}", k, v))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                write!(fmt, "PushStackFrame({});", initializers)
+            }
+            PopStackFrame => write!(fmt, "PopStackFrame;"),
+            MoveToStackFrameBelow(ref n) => write!(fmt, "MoveToStackFrameBelow({});", n),
         }
     }
 }

@@ -30,6 +30,12 @@ Statement: Statement<'input> = {
     "putc" "(" <Expression> ")" ";" => Statement::PutChar(<>),
     "while" <c:Expression> "{" <b:Statement*> "}" => Statement::While(c, Box::new(Statement::Block(b))),
     <Expression> ";" => Statement::Expression(<>),
+    "PushStackFrame" "(" <mut h:(<Identifier> "=" <Expression> ",")*> <tn:Identifier> "=" <tv:Expression> ")" ";" => {
+        h.push((tn, tv));
+        Statement::PushStackFrame(h)
+    },
+    "PopStackFrame" ";" => Statement::PopStackFrame,
+    "MoveToStackFrameBelow" "(" <Identifier> ")" ";" => Statement::MoveToStackFrameBelow(<>),
 };
 
 VarOrArrayDeclaration: Statement<'input> = {

@@ -709,6 +709,15 @@ impl Runtime {
             ast::Statement::Expression(expr) => {
                 self.compile_expression(expr)?;
             }
+            ast::Statement::PushStackFrame(vars) => {
+                unimplemented!("PushStackFrame");
+            }
+            ast::Statement::PopStackFrame => {
+                unimplemented!("PopStackFrame");
+            }
+            ast::Statement::MoveToStackFrameBelow(name) => {
+                unimplemented!("MoveToStackFrameBelow");
+            }
         }
         Ok(())
     }
