@@ -1,12 +1,21 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context as AnyhowContext, Result, anyhow, bail};
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Error, Formatter};
 use std::rc::{Rc, Weak};
 
+#[derive(Debug, Clone, Copy)]
+pub enum StackFrameOffset {
+    Above,
+    Below,
+}
+
 pub trait VariableLike: Debug {
     fn address(&self) -> isize;
+    fn stackframe(&self) -> Option<StackFrameOffset> {
+        None
+    }
 }
 
 pub struct Variable {
@@ -60,6 +69,8 @@ impl Drop for Variable {
 
 pub trait VariableExt {
     fn successor(&self, offset: usize) -> Successor;
+    fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame;
+    fn in_stackframe_below(&self) -> VariableInAdjacentStackFrame;
     fn size(&self) -> usize;
 }
 
@@ -68,6 +79,18 @@ impl VariableExt for Rc<Variable> {
         Successor {
             original: self.clone(),
             offset: offset as isize,
+        }
+    }
+    fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame {
+        VariableInAdjacentStackFrame {
+            original: self.clone(),
+            stackframe: StackFrameOffset::Above,
+        }
+    }
+    fn in_stackframe_below(&self) -> VariableInAdjacentStackFrame {
+        VariableInAdjacentStackFrame {
+            original: self.clone(),
+            stackframe: StackFrameOffset::Below,
         }
     }
     fn size(&self) -> usize {
@@ -108,6 +131,30 @@ impl VariableLike for Successor {
     }
 }
 
+pub struct VariableInAdjacentStackFrame {
+    original: Rc<Variable>,
+    stackframe: StackFrameOffset,
+}
+
+impl Debug for VariableInAdjacentStackFrame {
+    fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(
+            fmt,
+            "VariableInAdjacentStackFrame({:?}; {:?})",
+            self.original, self.stackframe
+        )
+    }
+}
+
+impl VariableLike for VariableInAdjacentStackFrame {
+    fn address(&self) -> isize {
+        self.original.address
+    }
+    fn stackframe(&self) -> Option<StackFrameOffset> {
+        Some(self.stackframe)
+    }
+}
+
 pub trait AsVariableLikeRef<'a> {
     // Associated type: The concrete type T that implements VariableLike
     // We need this because copy is generic over T, not dyn VariableLike
@@ -145,6 +192,13 @@ impl<'a> AsVariableLikeRef<'a> for Successor {
     }
 }
 
+impl<'a> AsVariableLikeRef<'a> for VariableInAdjacentStackFrame {
+    type Target = VariableInAdjacentStackFrame;
+    fn as_variable_like_ref(&'a self) -> &'a VariableInAdjacentStackFrame {
+        self
+    }
+}
+
 #[derive(Debug)]
 pub struct Context {
     variables: HashMap<String, Weak<Variable>>,
@@ -163,10 +217,11 @@ impl Context {
         }))
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<Rc<Variable>> {
+    pub fn get_variable(&self, name: &str) -> Result<Rc<Variable>> {
         self.variables
             .get(name)
             .and_then(|weak_var| weak_var.upgrade())
+            .with_context(|| format!("Variable {} not found", name))
     }
 
     fn deregister(&mut self, name: &str, address: isize, size: usize) -> Result<()> {
@@ -258,6 +313,19 @@ impl Context {
             }
         }
         top_address
+    }
+
+    pub fn next_adress_after_top(&self) -> usize {
+        self.used_addresses
+            .iter()
+            .filter(|&&x| x >= 0)
+            .max()
+            .map_or(0, |&x| x as usize + 1)
+    }
+
+    // TODO: This should also work with &str.
+    pub fn get_variable_names(&self) -> Vec<String> {
+        self.variables.keys().cloned().collect::<Vec<_>>()
     }
 }
 

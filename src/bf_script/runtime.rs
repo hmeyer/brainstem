@@ -1,18 +1,24 @@
 use super::{
-    ast, context::AsVariableLikeRef, context::Context, context::ContextExt, context::Successor,
-    context::Variable, context::VariableExt, context::VariableLike, parser::ProgramParser,
+    ast, context::AsVariableLikeRef, context::Context, context::ContextExt,
+    context::StackFrameOffset, context::Successor, context::Variable, context::VariableExt,
+    context::VariableLike, parser::ProgramParser,
 };
 use anyhow::{Result, anyhow};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::fmt::Debug;
 use std::rc::{Rc, Weak};
 
 static VALID_BF_CHARS: &str = "+-<>[],.";
 static LINMEM: &str = "__LINMEM__";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Item {
     MoveTo(isize),
+    MoveToInStackFrameAbove(isize),
+    MoveToInStackFrameBelow(isize),
+    StackFrameUp,
+    StackFrameDown,
     Verbatim(String),
     Indent(usize),
     NewLine,
@@ -41,7 +47,25 @@ impl Emitter {
 
     pub fn move_to<T: VariableLike>(&mut self, x: &T) {
         self.update_indent();
-        self.items.push(Item::MoveTo(x.address()));
+        match x.stackframe() {
+            Some(StackFrameOffset::Above) => {
+                self.items.push(Item::MoveToInStackFrameAbove(x.address()))
+            }
+            Some(StackFrameOffset::Below) => {
+                self.items.push(Item::MoveToInStackFrameBelow(x.address()))
+            }
+            None => self.items.push(Item::MoveTo(x.address())),
+        }
+    }
+
+    pub fn stackframe_up(&mut self) {
+        self.update_indent();
+        self.items.push(Item::StackFrameUp);
+    }
+
+    pub fn stackframe_down(&mut self) {
+        self.update_indent();
+        self.items.push(Item::StackFrameDown);
     }
 
     pub fn add_code(&mut self, code: String) -> Result<()> {
@@ -80,14 +104,25 @@ impl Emitter {
         self.items.push(Item::NewLine);
     }
 
-    pub fn emit(&self) -> String {
+    pub fn emit(&self, stackframe_size: usize) -> String {
         let mut indent = 0;
         static INDENTATION: &str = "  ";
         let mut address = 0;
         let mut is_on_new_line = true;
         let mut pieces = Vec::new();
-        for item in &self.items {
+        let resolved_items = self.items.iter().map(|item| match item {
+            Item::MoveToInStackFrameAbove(addr) => Item::MoveTo(addr + stackframe_size as isize),
+            Item::MoveToInStackFrameBelow(addr) => Item::MoveTo(addr - stackframe_size as isize),
+            Item::StackFrameUp => Item::Verbatim(">".repeat(stackframe_size)),
+            Item::StackFrameDown => Item::Verbatim("<".repeat(stackframe_size)),
+            _ => item.clone(),
+        });
+        for item in resolved_items {
             match item {
+                Item::MoveToInStackFrameAbove(_) => unreachable!(),
+                Item::MoveToInStackFrameBelow(_) => unreachable!(),
+                Item::StackFrameUp => unreachable!(),
+                Item::StackFrameDown => unreachable!(),
                 Item::MoveTo(_) | Item::Verbatim(_) => {
                     if is_on_new_line {
                         is_on_new_line = false;
@@ -97,7 +132,7 @@ impl Emitter {
                     match item {
                         Item::MoveTo(new_address) => {
                             let diff = new_address - address;
-                            address = *new_address;
+                            address = new_address;
                             match diff.cmp(&0) {
                                 std::cmp::Ordering::Equal => {}
                                 std::cmp::Ordering::Greater => {
@@ -113,7 +148,7 @@ impl Emitter {
                     }
                 }
                 Item::Indent(i) => {
-                    indent = *i;
+                    indent = i;
                 }
                 Item::NewLine => {
                     pieces.push("\n".to_string());
@@ -129,6 +164,7 @@ impl Emitter {
 struct Runtime {
     context: Rc<RefCell<Context>>,
     emitter: Emitter,
+    max_stackframe_size: usize,
 }
 
 macro_rules! bf {
@@ -219,7 +255,32 @@ impl Runtime {
         Self {
             context: ctx,
             emitter: Emitter::new(),
+            max_stackframe_size: 0,
         }
+    }
+
+    fn get_max_stackframe_size(&self) -> usize {
+        self.max_stackframe_size
+    }
+
+    fn copy_using_temp<
+        T1: VariableLike + for<'a> AsVariableLikeRef<'a>,
+        T2: VariableLike + for<'b> AsVariableLikeRef<'b>,
+    >(
+        &mut self,
+        from: &T1,
+        to: &T2,
+        temp: &Variable,
+    ) -> Result<()> {
+        let _indent = self
+            .emitter
+            .add_indent_comment_newline(format!("copy({:?}; {:?}; using {:?})", from, to, temp))?;
+        bf!(&mut self.emitter;
+            temp[-] to[-]
+            from[to+temp+from-]
+            temp[from+temp-]
+        );
+        Ok(())
     }
 
     fn copy<
@@ -234,13 +295,7 @@ impl Runtime {
             .emitter
             .add_indent_comment_newline(format!("copy({:?}; {:?})", from, to))?;
         let t_rc = self.context.add_temp()?;
-        let t = t_rc.as_ref();
-        bf!(&mut self.emitter;
-            t[-] to[-]
-            from[to+t+from-]
-            t[from+t-]
-        );
-        Ok(())
+        self.copy_using_temp(from, to, &*t_rc)
     }
 
     fn wrap_temp(&mut self, var: Rc<Variable>) -> Result<Rc<Variable>> {
@@ -570,53 +625,29 @@ impl Runtime {
                 }
             },
             ast::Expression::Variable(name) => {
-                let v = self
-                    .context
-                    .borrow()
-                    .get_variable(name)
-                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                let v = self.context.borrow().get_variable(name)?;
                 Ok(v)
             }
             ast::Expression::ArrayLookup(name, index) => {
-                let array = self
-                    .context
-                    .borrow()
-                    .get_variable(name)
-                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                let array = self.context.borrow().get_variable(name)?;
                 self.mem_lookup(array.successor(array.size() - 4), index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
-                let v = self
-                    .context
-                    .borrow()
-                    .get_variable(name)
-                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                let v = self.context.borrow().get_variable(name)?;
                 self.copy(&x, &v)?;
                 Ok(x)
             }
             ast::Expression::ArrayAssignment(name, index, expr) => {
-                let array = self
-                    .context
-                    .borrow()
-                    .get_variable(name)
-                    .ok_or_else(|| anyhow!("Variable {} not found in context", name))?;
+                let array = self.context.borrow().get_variable(name)?;
                 self.mem_write(array.successor(array.size() - 4), index, expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
-                let mem_control_block = self
-                    .context
-                    .borrow()
-                    .get_variable(LINMEM)
-                    .ok_or_else(|| anyhow!("Variable {} not found in context", LINMEM))?;
+                let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
                 self.mem_lookup(mem_control_block.successor(0), addr_expr)
             }
             ast::Expression::MemoryWrite(addr_expr, value_expr) => {
-                let mem_control_block = self
-                    .context
-                    .borrow()
-                    .get_variable(LINMEM)
-                    .ok_or_else(|| anyhow!("Variable {} not found in context", LINMEM))?;
+                let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
                 self.mem_write(mem_control_block.successor(0), addr_expr, value_expr)
             }
         }
@@ -710,13 +741,37 @@ impl Runtime {
                 self.compile_expression(expr)?;
             }
             ast::Statement::PushStackFrame(vars) => {
-                unimplemented!("PushStackFrame");
+                {
+                    let vars_in_context = self.context.borrow().get_variable_names();
+                    let t = self.context.add_temp()?;
+                    let names_to_set_separately =
+                        vars.iter().map(|(name, _)| *name).collect::<HashSet<_>>();
+                    for name in vars_in_context {
+                        if !names_to_set_separately.contains(name.as_str()) {
+                            let v = self.context.borrow().get_variable(name.as_str())?;
+                            let v_in_stackframe_above = v.in_stackframe_above();
+                            self.copy_using_temp(&v, &v_in_stackframe_above, &*t)?;
+                        }
+                    }
+                    for (var, expr) in vars {
+                        let v = self.context.borrow().get_variable(var)?;
+                        let v_in_stackframe_above = v.in_stackframe_above();
+                        let e = self.compile_expression(expr)?;
+                        self.copy_using_temp(&e, &v_in_stackframe_above, &*t)?;
+                    }
+                }
+                self.max_stackframe_size = self
+                    .max_stackframe_size
+                    .max(self.context.borrow().next_adress_after_top());
+                self.emitter.stackframe_up();
             }
             ast::Statement::PopStackFrame => {
-                unimplemented!("PopStackFrame");
+                self.emitter.stackframe_down();
             }
             ast::Statement::MoveToStackFrameBelow(name) => {
-                unimplemented!("MoveToStackFrameBelow");
+                let v = self.context.borrow().get_variable(name)?;
+                let v_in_stackframe_below = v.in_stackframe_below();
+                bf!(&mut self.emitter; mv(v, v_in_stackframe_below));
             }
         }
         Ok(())
@@ -731,7 +786,7 @@ pub fn compile_bf_script(program: &str) -> Result<String> {
     for op in ops {
         runtime.compile(&op)?;
     }
-    Ok(runtime.emitter.emit())
+    Ok(runtime.emitter.emit(runtime.get_max_stackframe_size()))
 }
 
 #[cfg(test)]
@@ -745,7 +800,7 @@ mod tests {
         let expr = ast::Expression::Literal(3);
         runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
-            runtime.emitter.emit(),
+            runtime.emitter.emit(0),
             "putc(3);\n  3\n  creating literal 3 into __temp0{4}>>>>[-]+++\n."
         );
     }
@@ -756,7 +811,7 @@ mod tests {
         let expr = ast::Expression::Not(Box::new(ast::Expression::Literal(2)));
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
-            runtime.emitter.emit(),
+            runtime.emitter.emit(0),
             "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0{4}>>>>[-]++\n  >[-]+<[->-<]>[<+>-]\n<."
         );
     }
@@ -900,10 +955,7 @@ mod tests {
             {var x = 1;} x = 2;
         "#,
         );
-        assert_eq!(
-            bf_code.err().unwrap().to_string(),
-            "Variable x not found in context"
-        );
+        assert_eq!(bf_code.err().unwrap().to_string(), "Variable x not found");
     }
 
     #[test]
@@ -976,5 +1028,51 @@ mod tests {
         "#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
         assert_eq!(output, "Hello World");
+    }
+
+    #[test]
+    fn test_push_stack_frame_var_not_found() {
+        let bf_code = compile_bf_script(
+            r#"
+            PushStackFrame(x=3);
+        "#,
+        );
+        assert_eq!(bf_code.err().unwrap().to_string(), "Variable x not found");
+    }
+
+    #[test]
+    fn test_push_stack_frame() {
+        compile_bf_script(
+            r#"
+            var x = 3;
+            PushStackFrame(x=4);
+        "#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_pop_stack_frame() {
+        let bf_code = compile_bf_script(
+            r#"
+            var x = 3;
+            PushStackFrame();
+            PopStackFrame();
+        "#,
+        )
+        .unwrap();
+        assert_eq!(&bf_code[bf_code.len() - 6..bf_code.len()], "\n<<<<<");
+    }
+
+    #[test]
+    fn test_move_to_stack_frame_below() {
+        compile_bf_script(
+            r#"
+            var x = 3;
+            PushStackFrame();
+            MoveToStackFrameBelow(x);
+        "#,
+        )
+        .unwrap();
     }
 }

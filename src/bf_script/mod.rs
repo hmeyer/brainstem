@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(
             format!(
                 "{:?}",
-                ProgramParser::new().parse("PopStackFrame;").unwrap()
+                ProgramParser::new().parse("PopStackFrame();").unwrap()
             ),
             "[PopStackFrame;]"
         );
