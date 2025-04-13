@@ -1,3 +1,4 @@
+#![deny(unused_must_use)]
 use super::{
     ast, context::AsVariableLikeRef, context::Context, context::ContextExt,
     context::StackFrameOffset, context::Successor, context::Variable, context::VariableExt,
@@ -45,8 +46,9 @@ impl Emitter {
         self.items.push(Item::Indent(self.indents.len()));
     }
 
-    pub fn move_to<T: VariableLike>(&mut self, x: &T) {
+    pub fn move_to<T: VariableLike>(&mut self, x: &T) -> Result<()> {
         self.update_indent();
+        self.add_comment(format!("{:?}", x))?;
         match x.stackframe() {
             Some(StackFrameOffset::Above) => {
                 self.items.push(Item::MoveToInStackFrameAbove(x.address()))
@@ -56,6 +58,7 @@ impl Emitter {
             }
             None => self.items.push(Item::MoveTo(x.address())),
         }
+        Ok(())
     }
 
     pub fn stackframe_up(&mut self) {
@@ -181,7 +184,7 @@ macro_rules! bf_impl {
     };
     ($emitter:expr; $v:ident $($rest:tt)*) => {
         let mut emitter=$emitter;
-        emitter.move_to($v.as_variable_like_ref());
+        emitter.move_to($v.as_variable_like_ref())?;
         bf_impl!(&mut emitter; $($rest)*);
     };
     ($emitter:expr; + $($rest:tt)*) => {
@@ -279,6 +282,7 @@ impl Runtime {
             from[to+temp+from-]
             temp[from+temp-]
         );
+        self.emitter.newline();
         Ok(())
     }
 
@@ -440,7 +444,7 @@ impl Runtime {
                 let result = self.context.add_temp()?;
                 self.emitter
                     .add_comment(format!("creating literal {} into {:?}", l, result))?;
-                self.emitter.move_to(&*result);
+                self.emitter.move_to(&*result)?;
                 self.emitter.add_code("[-]".into())?;
                 self.emitter.add_code("+".repeat(*l as usize))?;
                 Ok(result)
@@ -675,6 +679,7 @@ impl Runtime {
             }
             ast::Statement::If(cond, then, else_) => {
                 let cond = self.compile_expression(cond)?;
+                let cond = self.wrap_temp(cond)?;
                 let t0 = self.context.add_temp()?;
                 let t1 = self.context.add_temp()?;
                 bf!(&mut self.emitter;
@@ -709,29 +714,29 @@ impl Runtime {
             }
             ast::Statement::PutChar(expr) => {
                 let e = self.compile_expression(expr)?;
-                self.emitter.move_to(&e);
+                self.emitter.move_to(&e)?;
                 self.emitter.add_code(".".into())?;
             }
             ast::Statement::While(cond, body) => {
                 // We do some extra hoops here, to only add the condition code once.
                 // See: https://esolangs.org/wiki/Brainfuck_algorithms#while_(x)_{_code_}
                 let zero = self.context.add_temp()?;
-                self.emitter.move_to(&zero);
+                self.emitter.move_to(&zero)?;
                 self.emitter.add_code("[-]".into())?;
                 let t = self.context.add_temp()?;
-                self.emitter.move_to(&t);
+                self.emitter.move_to(&t)?;
                 self.emitter.add_code("[-]+[".into())?;
-                self.emitter.move_to(&t);
+                self.emitter.move_to(&t)?;
                 self.emitter.add_code("-".into())?;
                 let c = self.compile_expression(cond)?;
-                self.emitter.move_to(&c);
+                self.emitter.move_to(&c)?;
                 self.emitter.add_code("[".into())?;
                 self.compile(body)?;
-                self.emitter.move_to(&t);
+                self.emitter.move_to(&t)?;
                 self.emitter.add_code("+".into())?;
-                self.emitter.move_to(&zero);
+                self.emitter.move_to(&zero)?;
                 self.emitter.add_code("]".into())?;
-                self.emitter.move_to(&t);
+                self.emitter.move_to(&t)?;
                 self.emitter.add_code("]".into())?;
             }
             ast::Statement::Block(statements) => {
@@ -810,7 +815,11 @@ mod tests {
         runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(0),
-            "putc(3);\n  3\n  creating literal 3 into __temp0{4}>>>>[-]+++\n.\n"
+            "putc(3);
+  3
+  creating literal 3 into __temp0{4}__temp0{4}>>>>[-]+++
+__temp0{4}.
+"
         );
     }
 
@@ -821,7 +830,13 @@ mod tests {
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(0),
-            "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0{4}>>>>[-]++\n  >[-]+<[->-<]>[<+>-]\n<.\n"
+            "putc(!2);
+  !2
+    2
+    creating literal 2 into __temp0{4}__temp0{4}>>>>[-]++
+  __temp1{5}>[-]+__temp0{4}<[-__temp1{5}>-__temp0{4}<]__temp1{5}>[__temp0{4}<+__temp1{5}>-]
+__temp0{4}<.
+"
         );
     }
 
