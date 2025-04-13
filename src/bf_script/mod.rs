@@ -169,7 +169,7 @@ mod tests {
                     .parse("while foo / bar { x; }")
                     .unwrap()
             ),
-            "[while ((foo / bar)) {\nx;\n}]"
+            "[while (foo / bar) {\nx;\n}]"
         );
     }
 

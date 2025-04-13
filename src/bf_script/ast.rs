@@ -37,7 +37,7 @@ impl Debug for Statement<'_> {
                 None => write!(fmt, "if {:?} then {:?};", c, t),
             },
             PutChar(ref e) => write!(fmt, "putc({:?});", e),
-            While(ref c, ref s) => write!(fmt, "while ({:?}) {:?}", c, s),
+            While(ref c, ref s) => write!(fmt, "while {:?} {:?}", c, s),
             Block(ref v) => {
                 writeln!(fmt, "{{")?;
                 for s in v {

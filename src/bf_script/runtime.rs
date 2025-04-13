@@ -5,7 +5,7 @@ use super::{
 };
 use anyhow::{Result, anyhow};
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::{Rc, Weak};
 
@@ -171,7 +171,6 @@ macro_rules! bf {
     ($emitter:expr; $($rest:tt)*) => {
             let mut emitter=$emitter;
             bf_impl!(&mut emitter; $($rest)*);
-            emitter.newline();
     };
 }
 
@@ -291,9 +290,6 @@ impl Runtime {
         from: &T1,
         to: &T2,
     ) -> Result<()> {
-        let _indent = self
-            .emitter
-            .add_indent_comment_newline(format!("copy({:?}; {:?})", from, to))?;
         let t_rc = self.context.add_temp()?;
         self.copy_using_temp(from, to, &*t_rc)
     }
@@ -303,6 +299,9 @@ impl Runtime {
             return Ok(var);
         }
         let t = self.context.add_temp()?;
+        let _indent = self
+            .emitter
+            .add_indent_comment_newline(format!("wrap_temp({:?})", var))?;
         self.copy(&*var, &*t)?;
         Ok(t)
     }
@@ -436,7 +435,7 @@ impl Runtime {
         let _indent = self
             .emitter
             .add_indent_comment_newline(format!("{:?}", expr))?;
-        match expr {
+        let result = match expr {
             ast::Expression::Literal(l) => {
                 let result = self.context.add_temp()?;
                 self.emitter
@@ -444,7 +443,6 @@ impl Runtime {
                 self.emitter.move_to(&*result);
                 self.emitter.add_code("[-]".into())?;
                 self.emitter.add_code("+".repeat(*l as usize))?;
-                self.emitter.newline();
                 Ok(result)
             }
             ast::Expression::Not(expr) => {
@@ -650,7 +648,9 @@ impl Runtime {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
                 self.mem_write(mem_control_block.successor(0), addr_expr, value_expr)
             }
-        }
+        };
+        self.emitter.newline();
+        result
     }
 
     pub fn compile(&mut self, statement: &ast::Statement) -> Result<()> {
@@ -682,12 +682,14 @@ impl Runtime {
                     t1[-]
                     cond
                 );
+                self.emitter.newline();
                 self.emitter.add_code("[".into())?;
                 self.compile(then)?;
                 bf!(&mut self.emitter;
                     t0-
                     cond[t1+cond-]
                 );
+                self.emitter.newline();
                 self.emitter.add_code("]".into())?;
                 // else branch
                 if let Some(else_) = else_ {
@@ -695,11 +697,13 @@ impl Runtime {
                         t1[cond+t1-]
                         t0
                     );
+                    self.emitter.newline();
                     self.emitter.add_code("[".into())?;
                     self.compile(else_)?;
                     bf!(&mut self.emitter;
                         t0-
                     );
+                    self.emitter.newline();
                     self.emitter.add_code("]".into())?;
                 }
             }
@@ -744,20 +748,24 @@ impl Runtime {
                 {
                     let vars_in_context = self.context.borrow().get_variable_names();
                     let t = self.context.add_temp()?;
-                    let names_to_set_separately =
-                        vars.iter().map(|(name, _)| *name).collect::<HashSet<_>>();
+                    let vars_with_values = vars
+                        .iter()
+                        .map(|(name, e)| (*name, self.compile_expression(e)))
+                        .collect::<HashMap<_, _>>();
                     for name in vars_in_context {
-                        if !names_to_set_separately.contains(name.as_str()) {
-                            let v = self.context.borrow().get_variable(name.as_str())?;
-                            let v_in_stackframe_above = v.in_stackframe_above();
-                            self.copy_using_temp(&v, &v_in_stackframe_above, &*t)?;
+                        if name == LINMEM || vars_with_values.contains_key(name.as_str()) {
+                            continue;
                         }
-                    }
-                    for (var, expr) in vars {
-                        let v = self.context.borrow().get_variable(var)?;
+                        let v = self.context.borrow().get_variable(name.as_str())?;
                         let v_in_stackframe_above = v.in_stackframe_above();
-                        let e = self.compile_expression(expr)?;
-                        self.copy_using_temp(&e, &v_in_stackframe_above, &*t)?;
+                        self.copy_using_temp(&v, &v_in_stackframe_above, &*t)?;
+                        self.emitter.newline();
+                    }
+                    for (name, value) in vars_with_values.into_iter() {
+                        let v = self.context.borrow().get_variable(name)?;
+                        let v_in_stackframe_above = v.in_stackframe_above();
+                        self.copy_using_temp(&value?, &v_in_stackframe_above, &*t)?;
+                        self.emitter.newline();
                     }
                 }
                 self.max_stackframe_size = self
@@ -774,6 +782,7 @@ impl Runtime {
                 bf!(&mut self.emitter; mv(v, v_in_stackframe_below));
             }
         }
+        self.emitter.newline();
         Ok(())
     }
 }
@@ -801,7 +810,7 @@ mod tests {
         runtime.compile(&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(0),
-            "putc(3);\n  3\n  creating literal 3 into __temp0{4}>>>>[-]+++\n."
+            "putc(3);\n  3\n  creating literal 3 into __temp0{4}>>>>[-]+++\n.\n"
         );
     }
 
@@ -812,7 +821,7 @@ mod tests {
         runtime.compile(&&ast::Statement::PutChar(expr)).unwrap();
         assert_eq!(
             runtime.emitter.emit(0),
-            "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0{4}>>>>[-]++\n  >[-]+<[->-<]>[<+>-]\n<."
+            "putc(!2);\n  !2\n    2\n    creating literal 2 into __temp0{4}>>>>[-]++\n  >[-]+<[->-<]>[<+>-]\n<.\n"
         );
     }
 
@@ -840,8 +849,15 @@ mod tests {
     #[test]
     fn test_end2end_div() {
         let bf_code = compile_bf_script(r#"putc("0" + 15 / 3);"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
         assert_eq!(output, "5");
+    }
+
+    #[test]
+    fn test_end2end_div_larger() {
+        let bf_code = compile_bf_script(r#"putc("0" + 752 / 100);"#).unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000_000)).unwrap();
+        assert_eq!(output, "7");
     }
 
     #[test]
@@ -1061,7 +1077,28 @@ mod tests {
         "#,
         )
         .unwrap();
-        assert_eq!(&bf_code[bf_code.len() - 6..bf_code.len()], "\n<<<<<");
+        assert_eq!(&bf_code[bf_code.len() - 7..bf_code.len()], "\n<<<<<\n");
+    }
+
+    #[test]
+    fn test_end2end_push_pop_stack_frame() {
+        let bf_code = compile_bf_script(
+            r#"
+            var x = "0";
+            putc(x);
+            PushStackFrame(x=x+1);
+            putc(x);
+            PushStackFrame(x=x+1);
+            putc(x);
+            PopStackFrame();
+            putc(x);
+            PopStackFrame();
+            putc(x);
+        "#,
+        )
+        .unwrap();
+        let result = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
+        assert_eq!(result, "01210");
     }
 
     #[test]
