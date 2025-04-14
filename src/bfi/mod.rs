@@ -15,7 +15,7 @@ pub fn run_program<T>(
     input: &mut impl Read,
     output: &mut impl Write,
     max_steps: Option<usize>,
-) -> Result<()>
+) -> Result<usize>
 where
     T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug,
 {
@@ -96,7 +96,10 @@ where
             }
         }
     }
-    Ok(())
+    if ip < ops.len() {
+        return Err(anyhow::anyhow!("max_steps {} exceeded", steps));
+    }
+    Ok(steps)
 }
 
 pub fn run_program_from_str<T>(

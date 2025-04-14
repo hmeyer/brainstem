@@ -183,9 +183,12 @@ macro_rules! bf_impl {
         bf_impl!(&mut emitter; $dst[-]$src[$dst+$src-] $($rest)*);
     };
     ($emitter:expr; $v:ident $($rest:tt)*) => {
-        let mut emitter=$emitter;
-        emitter.move_to($v.as_variable_like_ref())?;
-        bf_impl!(&mut emitter; $($rest)*);
+        #[allow(unused_mut)]
+        {
+            let mut emitter=$emitter;
+            emitter.move_to($v.as_variable_like_ref())?;
+            bf_impl!(&mut emitter; $($rest)*);
+        }
     };
     ($emitter:expr; + $($rest:tt)*) => {
         let mut emitter=$emitter;
@@ -316,7 +319,6 @@ impl Runtime {
         index: &ast::Expression,
     ) -> Result<Rc<Variable>> {
         let result = self.context.add_temp()?;
-        let index = self.compile_expression(index)?;
 
         let memory_before = mem_control_block.successor(-1);
         let index1 = mem_control_block.successor(0);
@@ -326,9 +328,11 @@ impl Runtime {
 
         // We use this structure to move from the tail into the memory:
         // MEMORY <- moving direction <- memory_before | index1 | index2 | data | memory_after
-
-        self.copy(&*index, &index1)?;
-        self.copy(&*index, &index2)?;
+        {
+            let index = self.compile_expression(index)?;
+            self.copy(&*index, &index1)?;
+            self.copy(&*index, &index2)?;
+        }
         {
             let _indent = self
                 .emitter
@@ -380,9 +384,6 @@ impl Runtime {
         index: &ast::Expression,
         value: &ast::Expression,
     ) -> Result<Rc<Variable>> {
-        let index = self.compile_expression(index)?;
-        let value = self.compile_expression(value)?;
-
         let memory_before = mem_control_block.successor(-1);
         let index1 = mem_control_block.successor(0);
         let index2 = mem_control_block.successor(1);
@@ -390,12 +391,15 @@ impl Runtime {
         let space = mem_control_block.successor(3);
         let memory_after = mem_control_block.successor(4);
 
+        let value = self.compile_expression(value)?;
         // We use this structure to move from the tail into the memory:
         // MEMORY <- moving direction <- memory_before | index1 | index2 | data | space | memory_after
-
         self.copy(&value, &data)?;
-        self.copy(&index, &index1)?;
-        self.copy(&index, &index2)?;
+        {
+            let index = self.compile_expression(index)?;
+            self.copy(&index, &index1)?;
+            self.copy(&index, &index2)?;
+        }
         {
             let _indent = self
                 .emitter
@@ -451,12 +455,13 @@ impl Runtime {
             }
             ast::Expression::Not(expr) => {
                 let x = self.compile_expression(expr)?;
-                let t = self.context.add_temp()?;
+                let x = self.wrap_temp(x)?;
+                let r = self.context.add_temp()?;
                 bf!(&mut self.emitter;
-                    t[-]+
-                    x[-t-x]t[x+t-]
+                    r[-]+
+                    x[r-x[-]]
                 );
-                Ok(x)
+                Ok(r)
             }
             ast::Expression::Binary(x, opcode, y) => match *opcode {
                 ast::Opcode::Mul => {
@@ -632,7 +637,7 @@ impl Runtime {
             }
             ast::Expression::ArrayLookup(name, index) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_lookup(array.successor(array.size() - 4), index)
+                self.mem_lookup(array.successor((array.size() - 4) as isize), index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
@@ -642,7 +647,7 @@ impl Runtime {
             }
             ast::Expression::ArrayAssignment(name, index, expr) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_write(array.successor(array.size() - 4), index, expr)
+                self.mem_write(array.successor((array.size() - 4) as isize), index, expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
@@ -673,7 +678,7 @@ impl Runtime {
                 let a = self.context.add_with_size(name, len + array_head_size)?;
                 for (i, expr) in init.iter().enumerate() {
                     let value = self.compile_expression(expr)?;
-                    let index = a.successor(len - 1 - i);
+                    let index = a.successor((len - 1 - i) as isize);
                     self.copy(&value, &index)?;
                 }
             }
@@ -696,17 +701,19 @@ impl Runtime {
                 );
                 self.emitter.newline();
                 self.emitter.add_code("]".into())?;
+                bf!(&mut self.emitter;
+                    t1[cond+t1-]
+                );
                 // else branch
                 if let Some(else_) = else_ {
+                    self.emitter.newline();
                     bf!(&mut self.emitter;
-                        t1[cond+t1-]
                         t0
                     );
-                    self.emitter.newline();
                     self.emitter.add_code("[".into())?;
                     self.compile(else_)?;
                     bf!(&mut self.emitter;
-                        t0-
+                        t0[-]
                     );
                     self.emitter.newline();
                     self.emitter.add_code("]".into())?;
@@ -728,8 +735,10 @@ impl Runtime {
                 self.emitter.add_code("[-]+[".into())?;
                 self.emitter.move_to(&t)?;
                 self.emitter.add_code("-".into())?;
-                let c = self.compile_expression(cond)?;
-                self.emitter.move_to(&c)?;
+                {
+                    let c = self.compile_expression(cond)?;
+                    self.emitter.move_to(&c)?;
+                }
                 self.emitter.add_code("[".into())?;
                 self.compile(body)?;
                 self.emitter.move_to(&t)?;
@@ -762,9 +771,12 @@ impl Runtime {
                             continue;
                         }
                         let v = self.context.borrow().get_variable(name.as_str())?;
-                        let v_in_stackframe_above = v.in_stackframe_above();
-                        self.copy_using_temp(&v, &v_in_stackframe_above, &*t)?;
-                        self.emitter.newline();
+                        for i in 0..v.size() {
+                            let vi = v.successor(i as isize);
+                            let vi_in_stackframe_above = vi.in_stackframe_above();
+                            self.copy_using_temp(&vi, &vi_in_stackframe_above, &*t)?;
+                            self.emitter.newline();
+                        }
                     }
                     for (name, value) in vars_with_values.into_iter() {
                         let v = self.context.borrow().get_variable(name)?;
@@ -834,8 +846,8 @@ __temp0{4}.
   !2
     2
     creating literal 2 into __temp0{4}__temp0{4}>>>>[-]++
-  __temp1{5}>[-]+__temp0{4}<[-__temp1{5}>-__temp0{4}<]__temp1{5}>[__temp0{4}<+__temp1{5}>-]
-__temp0{4}<.
+  __temp1{5}>[-]+__temp0{4}<[__temp1{5}>-__temp0{4}<[-]]
+__temp1{5}>.
 "
         );
     }
@@ -1009,27 +1021,31 @@ __temp0{4}<.
     fn test_end2end_if_else() {
         let bf_code = compile_bf_script(
             r#"
-                if 2 == 1 + 1 then {
-                    putc("A");
+                var x = "x";
+                if x then {
+                    putc("1");
+                    putc(x);
                 }
-                if 2 == 1 then {
-                    putc("B");
-                }
-                if 2 == 1 + 1 then {
-                    putc("C");
+                if x then {
+                    putc("2");
+                    putc(x);
                 } else {
-                    putc("D");
+                    putc("3");
+                    putc(x + 1);
                 }
-                if 2 == 1 then {
-                    putc("F");
+                if !x then {
+                    putc("4");
+                    putc(x + 1);
                 } else {
-                    putc("G");
+                    putc("5");
+                    putc(x);
                 }
             "#,
         )
         .unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
-        assert_eq!(output, "ACG");
+        println!("{}", bf_code);
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "1x2x5x");
     }
 
     #[test]
@@ -1126,5 +1142,32 @@ __temp0{4}<.
         "#,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_end2end_recursive_number_printer() {
+        let bf_code = compile_bf_script(
+            r#"
+            var n = 752;
+            var depth = 1;
+            var base = 10;
+
+            while depth {
+                if n >= base then {
+                    var q = n / base;
+                    n = n % base;
+                    PushStackFrame(n=q, depth=depth + 1);
+                } else {
+                    putc("0" + n);
+                    if depth then {
+                        PopStackFrame();
+                    }
+                }
+            }
+        "#,
+        )
+        .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000_000)).unwrap();
+        assert_eq!(output, "752");
     }
 }

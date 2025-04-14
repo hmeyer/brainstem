@@ -68,17 +68,17 @@ impl Drop for Variable {
 }
 
 pub trait VariableExt {
-    fn successor(&self, offset: usize) -> Successor;
+    fn successor(&self, offset: isize) -> Successor;
+    fn size(&self) -> usize;
     fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame;
     fn in_stackframe_below(&self) -> VariableInAdjacentStackFrame;
-    fn size(&self) -> usize;
 }
 
 impl VariableExt for Rc<Variable> {
-    fn successor(&self, offset: usize) -> Successor {
+    fn successor(&self, offset: isize) -> Successor {
         Successor {
             original: self.clone(),
-            offset: offset as isize,
+            offset: offset,
         }
     }
     fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame {
@@ -103,12 +103,27 @@ pub struct Successor {
     offset: isize,
 }
 
-impl Successor {
-    pub fn successor(&self, offset: isize) -> Self {
+impl VariableExt for Successor {
+    fn successor(&self, offset: isize) -> Successor {
         Successor {
             original: self.original.clone(),
             offset: self.offset + offset,
         }
+    }
+    fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame {
+        VariableInAdjacentStackFrame {
+            original: self.original.clone(),
+            stackframe: StackFrameOffset::Above,
+        }
+    }
+    fn in_stackframe_below(&self) -> VariableInAdjacentStackFrame {
+        VariableInAdjacentStackFrame {
+            original: self.original.clone(),
+            stackframe: StackFrameOffset::Below,
+        }
+    }
+    fn size(&self) -> usize {
+        self.original.size
     }
 }
 
@@ -132,7 +147,7 @@ impl VariableLike for Successor {
 }
 
 pub struct VariableInAdjacentStackFrame {
-    original: Rc<Variable>,
+    original: Rc<dyn VariableLike>,
     stackframe: StackFrameOffset,
 }
 
@@ -148,7 +163,7 @@ impl Debug for VariableInAdjacentStackFrame {
 
 impl VariableLike for VariableInAdjacentStackFrame {
     fn address(&self) -> isize {
-        self.original.address
+        self.original.address()
     }
     fn stackframe(&self) -> Option<StackFrameOffset> {
         Some(self.stackframe)
