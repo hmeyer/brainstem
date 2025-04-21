@@ -78,7 +78,7 @@ impl VariableExt for Rc<Variable> {
     fn successor(&self, offset: isize) -> Successor {
         Successor {
             original: self.clone(),
-            offset: offset,
+            offset,
         }
     }
     fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame {

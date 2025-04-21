@@ -308,7 +308,7 @@ impl Runtime {
         to: &T2,
     ) -> Result<()> {
         let t_rc = self.context.add_temp()?;
-        self.copy_using_temp(from, to, &*t_rc)
+        self.copy_using_temp(from, to, &t_rc)
     }
 
     fn wrap_temp(&mut self, var: Rc<Variable>) -> Result<Rc<Variable>> {
@@ -794,14 +794,14 @@ impl Runtime {
                         for i in 0..v.size() {
                             let vi = v.successor(i as isize);
                             let vi_in_stackframe_above = vi.in_stackframe_above();
-                            self.copy_using_temp(&vi, &vi_in_stackframe_above, &*t)?;
+                            self.copy_using_temp(&vi, &vi_in_stackframe_above, &t)?;
                             self.emitter.newline();
                         }
                     }
                     for (name, value) in vars_with_values.into_iter() {
                         let v = self.context.borrow().get_variable(name)?;
                         let v_in_stackframe_above = v.in_stackframe_above();
-                        self.copy_using_temp(&value?, &v_in_stackframe_above, &*t)?;
+                        self.copy_using_temp(&value?, &v_in_stackframe_above, &t)?;
                         self.emitter.newline();
                     }
                 }
