@@ -12,6 +12,7 @@ use std::rc::{Rc, Weak};
 
 static VALID_BF_CHARS: &str = "+-<>[],.";
 static LINMEM: &str = "__LINMEM__";
+static STACKDEPTH: &str = "__STACKDEPTH__";
 
 #[derive(Debug, Clone)]
 enum Item {
@@ -20,6 +21,7 @@ enum Item {
     MoveToInStackFrameBelow(isize),
     StackFrameUp,
     StackFrameDown,
+    AddStackFrameSize,
     Verbatim(String),
     Indent(usize),
     NewLine,
@@ -71,6 +73,11 @@ impl Emitter {
         self.items.push(Item::StackFrameDown);
     }
 
+    pub fn add_stackframe_size(&mut self) {
+        self.update_indent();
+        self.items.push(Item::AddStackFrameSize);
+    }
+
     pub fn add_code(&mut self, code: String) -> Result<()> {
         self.update_indent();
         if code.chars().any(|c| !VALID_BF_CHARS.contains(c)) {
@@ -118,6 +125,7 @@ impl Emitter {
             Item::MoveToInStackFrameBelow(addr) => Item::MoveTo(addr - stackframe_size as isize),
             Item::StackFrameUp => Item::Verbatim(">".repeat(stackframe_size)),
             Item::StackFrameDown => Item::Verbatim("<".repeat(stackframe_size)),
+            Item::AddStackFrameSize => Item::Verbatim("+".repeat(stackframe_size)),
             _ => item.clone(),
         });
         for item in resolved_items {
@@ -126,6 +134,7 @@ impl Emitter {
                 Item::MoveToInStackFrameBelow(_) => unreachable!(),
                 Item::StackFrameUp => unreachable!(),
                 Item::StackFrameDown => unreachable!(),
+                Item::AddStackFrameSize => unreachable!(),
                 Item::MoveTo(_) | Item::Verbatim(_) => {
                     if is_on_new_line {
                         is_on_new_line = false;
@@ -257,6 +266,7 @@ impl Runtime {
     pub fn new() -> Self {
         let ctx = Context::new();
         ctx.add_with_size(LINMEM, 4).unwrap();
+        ctx.add(STACKDEPTH).unwrap();
         Self {
             context: ctx,
             emitter: Emitter::new(),
@@ -651,11 +661,21 @@ impl Runtime {
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
-                self.mem_lookup(mem_control_block.successor(0), addr_expr)
+                let adjusted_addr = Box::new(ast::Expression::Binary(
+                    addr_expr.clone(),
+                    ast::Opcode::Add,
+                    Box::new(ast::Expression::Variable(STACKDEPTH)),
+                ));
+                self.mem_lookup(mem_control_block.successor(0), &adjusted_addr)
             }
             ast::Expression::MemoryWrite(addr_expr, value_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
-                self.mem_write(mem_control_block.successor(0), addr_expr, value_expr)
+                let adjusted_addr = Box::new(ast::Expression::Binary(
+                    addr_expr.clone(),
+                    ast::Opcode::Add,
+                    Box::new(ast::Expression::Variable(STACKDEPTH)),
+                ));
+                self.mem_write(mem_control_block.successor(0), &adjusted_addr, value_expr)
             }
         };
         self.emitter.newline();
@@ -785,6 +805,9 @@ impl Runtime {
                         self.emitter.newline();
                     }
                 }
+                let stackdepth = self.context.borrow().get_variable(STACKDEPTH)?;
+                self.emitter.move_to(&stackdepth.in_stackframe_above())?;
+                self.emitter.add_stackframe_size();
                 self.max_stackframe_size = self
                     .max_stackframe_size
                     .max(self.context.borrow().next_adress_after_top());
@@ -829,8 +852,8 @@ mod tests {
             runtime.emitter.emit(0),
             "putc(3);
   3
-  creating literal 3 into __temp0{4}__temp0{4}>>>>[-]+++
-__temp0{4}.
+  creating literal 3 into __temp0{5}__temp0{5}>>>>>[-]+++
+__temp0{5}.
 "
         );
     }
@@ -845,9 +868,9 @@ __temp0{4}.
             "putc(!2);
   !2
     2
-    creating literal 2 into __temp0{4}__temp0{4}>>>>[-]++
-  __temp1{5}>[-]+__temp0{4}<[__temp1{5}>-__temp0{4}<[-]]
-__temp1{5}>.
+    creating literal 2 into __temp0{5}__temp0{5}>>>>>[-]++
+  __temp1{6}>[-]+__temp0{5}<[__temp1{6}>-__temp0{5}<[-]]
+__temp1{6}>.
 "
         );
     }
@@ -1108,7 +1131,7 @@ __temp1{5}>.
         "#,
         )
         .unwrap();
-        assert_eq!(&bf_code[bf_code.len() - 7..bf_code.len()], "\n<<<<<\n");
+        assert_eq!(&bf_code[bf_code.len() - 8..bf_code.len()], "\n<<<<<<\n");
     }
 
     #[test]
@@ -1169,5 +1192,36 @@ __temp1{5}>.
         .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000_000)).unwrap();
         assert_eq!(output, "752");
+    }
+
+    #[test]
+    fn test_end2end_linmem_and_stackframes() {
+        let bf_code = compile_bf_script(
+            r#"
+            var x = 0;
+            LINMEM[10] = "1";
+            LINMEM[20] = "2";
+            LINMEM[30] = "3";
+            PushStackFrame(x=x+1);
+            PushStackFrame(x=x+1);
+            putc(LINMEM[10] + x);
+            putc(LINMEM[20] + x);
+            putc(LINMEM[30] + x);
+            putc("X");
+            PopStackFrame();
+            putc(LINMEM[10] + x);
+            putc(LINMEM[20] + x);
+            putc(LINMEM[30] + x);
+            putc("X");
+            PopStackFrame();
+            putc(LINMEM[10] + x);
+            putc(LINMEM[20] + x);
+            putc(LINMEM[30] + x);
+            putc("X");
+        "#,
+        )
+        .unwrap();
+        let result = run_program_from_str::<u32>(&bf_code, "", Some(300_000)).unwrap();
+        assert_eq!(result, "345X234X123X");
     }
 }
