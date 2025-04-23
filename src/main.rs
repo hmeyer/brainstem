@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use thalamus::{compile_brain_stem, run_program_from_str};
 use std::fs::File;
 use std::io::{self, Read, Write};
+use thalamus::{compile_brain_stem, run_program};
 
 #[derive(ValueEnum, Debug, Clone)]
 enum IntegerType {
@@ -29,7 +29,7 @@ struct Args {
     run: bool,
 
     /// Input for running the bf code (use - for stdin)
-    #[arg(short, long, default_value = "-")]
+    #[arg(short = 'I', long, default_value = "-")]
     run_input: String,
 
     /// Output file for the run result (use - for stdout)
@@ -37,7 +37,7 @@ struct Args {
     run_output: String,
 
     /// Integer type to use for bf execution
-    #[arg(short = 't', long, value_enum, default_value = "u8")]
+    #[arg(short = 't', long, value_enum, default_value = "u32")]
     int_type: IntegerType,
 
     /// Maximum steps to run (prevents infinite loops)
@@ -84,49 +84,28 @@ fn main() -> Result<()> {
 
     // Run the bf code if requested
     if args.run {
-        // Read run input
-        let mut input_content = String::new();
-        if args.run_input == "-" {
-            io::stdin()
-                .read_to_string(&mut input_content)
-                .context("Failed to read run input from stdin")?;
+        // Prepare input and output objects
+        let mut input: Box<dyn Read> = if args.run_input == "-" {
+            Box::new(io::stdin())
         } else {
-            let mut file = File::open(&args.run_input)
-                .with_context(|| format!("Failed to open run input file: {}", args.run_input))?;
-            file.read_to_string(&mut input_content).with_context(|| {
-                format!("Failed to read from run input file: {}", args.run_input)
-            })?;
-        }
-
-        // Run the bf code
-        let output = match args.int_type {
-            IntegerType::U8 => {
-                run_program_from_str::<u8>(&bf_code, &input_content, args.max_steps)?
-            }
-            IntegerType::I8 => {
-                run_program_from_str::<i8>(&bf_code, &input_content, args.max_steps)?
-            }
-            IntegerType::U32 => {
-                run_program_from_str::<u32>(&bf_code, &input_content, args.max_steps)?
-            }
-            IntegerType::I32 => {
-                run_program_from_str::<i32>(&bf_code, &input_content, args.max_steps)?
-            }
+            Box::new(File::open(&args.run_input)
+                .with_context(|| format!("Failed to open run input file: {}", args.run_input))?)
         };
-
-        // Write run output
-        if args.run_output == "-" {
-            io::stdout()
-                .write_all(output.as_bytes())
-                .context("Failed to write run output to stdout")?;
+        
+        let mut output: Box<dyn Write> = if args.run_output == "-" {
+            Box::new(io::stdout())
         } else {
-            let mut file = File::create(&args.run_output).with_context(|| {
-                format!("Failed to create run output file: {}", args.run_output)
-            })?;
-            file.write_all(output.as_bytes()).with_context(|| {
-                format!("Failed to write to run output file: {}", args.run_output)
-            })?;
-        }
+            Box::new(File::create(&args.run_output)
+                .with_context(|| format!("Failed to create run output file: {}", args.run_output))?)
+        };
+        
+        // Run the program with the configured input/output and integer type
+        let _steps = match args.int_type {
+            IntegerType::U8 => run_program::<u8>(&bf_code, &mut input, &mut output, args.max_steps)?,
+            IntegerType::I8 => run_program::<i8>(&bf_code, &mut input, &mut output, args.max_steps)?,
+            IntegerType::U32 => run_program::<u32>(&bf_code, &mut input, &mut output, args.max_steps)?,
+            IntegerType::I32 => run_program::<i32>(&bf_code, &mut input, &mut output, args.max_steps)?,
+        };
     }
 
     Ok(())
