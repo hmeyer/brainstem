@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use rbfc::{compile_brain_stem, run_program_from_str};
+use thalamus::{compile_brain_stem, run_program_from_str};
 use std::fs::File;
 use std::io::{self, Read, Write};
 
@@ -12,7 +12,7 @@ enum IntegerType {
     I32,
 }
 
-/// RBFC - A Brainfuck compiler with script extension
+/// Thalamus - A two-stage Brainfuck compiler (and minimal interpreter).
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
