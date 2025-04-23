@@ -827,7 +827,7 @@ impl Runtime {
     }
 }
 
-pub fn compile_bf_script(program: &str) -> Result<String> {
+pub fn compile_brain_stem(program: &str) -> Result<String> {
     let ops = ProgramParser::new()
         .parse(program)
         .map_err(|e| anyhow!("{}", e))?;
@@ -877,42 +877,42 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_literal() {
-        let bf_code = compile_bf_script(r#"putc("3");"#).unwrap();
+        let bf_code = compile_brain_stem(r#"putc("3");"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "3");
     }
 
     #[test]
     fn test_end2end_add_sub() {
-        let bf_code = compile_bf_script(r#"putc("0" + 99 - 90);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"putc("0" + 99 - 90);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "9");
     }
 
     #[test]
     fn test_end2end_mul() {
-        let bf_code = compile_bf_script(r#"putc("0" + 2 * 3);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"putc("0" + 2 * 3);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "6");
     }
 
     #[test]
     fn test_end2end_div() {
-        let bf_code = compile_bf_script(r#"putc("0" + 15 / 3);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"putc("0" + 15 / 3);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
         assert_eq!(output, "5");
     }
 
     #[test]
     fn test_end2end_div_larger() {
-        let bf_code = compile_bf_script(r#"putc("0" + 752 / 100);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"putc("0" + 752 / 100);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000_000)).unwrap();
         assert_eq!(output, "7");
     }
 
     #[test]
     fn test_end2end_mod() {
-        let bf_code = compile_bf_script(r#"putc("0" + 19 % 12);putc("0" + 23 % 7);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"putc("0" + 19 % 12);putc("0" + 23 % 7);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "72");
     }
@@ -920,7 +920,7 @@ __temp1{6}>.
     #[test]
     fn test_end2end_and() {
         let bf_code =
-            compile_bf_script(r#"putc("0" + (1 && 0));putc("0" + (1 && 7) / (1 && 7));"#).unwrap();
+            compile_brain_stem(r#"putc("0" + (1 && 0));putc("0" + (1 && 7) / (1 && 7));"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "01");
     }
@@ -928,7 +928,7 @@ __temp1{6}>.
     #[test]
     fn test_end2end_or() {
         let bf_code =
-            compile_bf_script(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
+            compile_brain_stem(r#"putc("0" + (0 || 0));putc("0" + (0 || 6) / (0 || 6));"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "01");
     }
@@ -936,7 +936,7 @@ __temp1{6}>.
     #[test]
     fn test_end2end_lt() {
         let bf_code =
-            compile_bf_script(r#"putc("0" + (0 < 17));putc("0" + (3 < 2));putc("0" + (3 < 3));"#)
+            compile_brain_stem(r#"putc("0" + (0 < 17));putc("0" + (3 < 2));putc("0" + (3 < 3));"#)
                 .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "100");
@@ -944,7 +944,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_le() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"putc("0" + (0 <= 17));putc("0" + (3 <= 2));putc("0" + (3 <= 3));"#,
         )
         .unwrap();
@@ -955,7 +955,7 @@ __temp1{6}>.
     #[test]
     fn test_end2end_eq() {
         let bf_code =
-            compile_bf_script(r#"putc("0" + (0 == 0));putc("0" + (3 == 3));putc("0" + (3 == 2));"#)
+            compile_brain_stem(r#"putc("0" + (0 == 0));putc("0" + (3 == 3));putc("0" + (3 == 2));"#)
                 .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "110");
@@ -964,7 +964,7 @@ __temp1{6}>.
     #[test]
     fn test_end2end_ne() {
         let bf_code =
-            compile_bf_script(r#"putc("0" + (0 != 0));putc("0" + (3 != 3));putc("0" + (3 != 2));"#)
+            compile_brain_stem(r#"putc("0" + (0 != 0));putc("0" + (3 != 3));putc("0" + (3 != 2));"#)
                 .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "001");
@@ -973,21 +973,21 @@ __temp1{6}>.
     #[test]
     fn test_end2end_var() {
         let bf_code =
-            compile_bf_script(r#"var x = "0"; putc(x + 2); x = x+1; putc(x + 3);"#).unwrap();
+            compile_brain_stem(r#"var x = "0"; putc(x + 2); x = x+1; putc(x + 3);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "24");
     }
 
     #[test]
     fn test_end2end_array_simple() {
-        let bf_code = compile_bf_script(r#"var s[] = [7]; putc("0" + s[0]);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"var s[] = [7]; putc("0" + s[0]);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
         assert_eq!(output, "7");
     }
 
     #[test]
     fn test_end2end_array() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             var s[] = "Hello "; 
             putc(s[0]); putc(s[1]); putc(s[2]); putc(s[3]); putc(s[4]); putc(s[5]);
@@ -1006,7 +1006,7 @@ __temp1{6}>.
 
     #[test]
     fn test_block_scope_simple() {
-        compile_bf_script(
+        compile_brain_stem(
             r#"
             var x = 1; { x = 2; }
         "#,
@@ -1016,7 +1016,7 @@ __temp1{6}>.
 
     #[test]
     fn test_block_var_not_in_scope() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             {var x = 1;} x = 2;
         "#,
@@ -1026,7 +1026,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_while() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
                 var x = 9;
                 while x {
@@ -1042,7 +1042,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_if_else() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
                 var x = "x";
                 if x then {
@@ -1073,7 +1073,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_linmem_simple() {
-        let bf_code = compile_bf_script(r#"LINMEM[0] = 7; putc("0" + LINMEM[0]);"#).unwrap();
+        let bf_code = compile_brain_stem(r#"LINMEM[0] = 7; putc("0" + LINMEM[0]);"#).unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
         assert_eq!(output, "7");
     }
@@ -1081,7 +1081,7 @@ __temp1{6}>.
     #[test]
     fn test_end2end_linmem() {
         let bf_code =
-            compile_bf_script(r#"
+            compile_brain_stem(r#"
             LINMEM[0] = "H";
             LINMEM[1] = "e";
             LINMEM[2] = "l";
@@ -1102,7 +1102,7 @@ __temp1{6}>.
 
     #[test]
     fn test_push_stack_frame_var_not_found() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             PushStackFrame(x=3);
         "#,
@@ -1112,7 +1112,7 @@ __temp1{6}>.
 
     #[test]
     fn test_push_stack_frame() {
-        compile_bf_script(
+        compile_brain_stem(
             r#"
             var x = 3;
             PushStackFrame(x=4);
@@ -1123,7 +1123,7 @@ __temp1{6}>.
 
     #[test]
     fn test_pop_stack_frame() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             var x = 3;
             PushStackFrame();
@@ -1136,7 +1136,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_push_pop_stack_frame() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             var x = "0";
             putc(x);
@@ -1157,7 +1157,7 @@ __temp1{6}>.
 
     #[test]
     fn test_move_to_stack_frame_below() {
-        compile_bf_script(
+        compile_brain_stem(
             r#"
             var x = 3;
             PushStackFrame();
@@ -1169,7 +1169,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_recursive_number_printer() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             var n = 752;
             var depth = 1;
@@ -1196,7 +1196,7 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_linmem_and_stackframes() {
-        let bf_code = compile_bf_script(
+        let bf_code = compile_brain_stem(
             r#"
             var x = 0;
             LINMEM[10] = "1";

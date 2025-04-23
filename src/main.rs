@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
-use rbfc::{compile_bf_script, run_program_from_str};
+use rbfc::{compile_brain_stem, run_program_from_str};
 use std::fs::File;
 use std::io::{self, Read, Write};
 
@@ -16,7 +16,7 @@ enum IntegerType {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Input bf_script file (use - for stdin)
+    /// Input brain_stem file (use - for stdin)
     #[arg(short, long, default_value = "-")]
     input: String,
 
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
         Args::parse()
     };
 
-    // Read input bf_script
+    // Read input brain_stem script
     let mut input_content = String::new();
     if args.input == "-" {
         io::stdin()
@@ -67,8 +67,8 @@ fn main() -> Result<()> {
             .with_context(|| format!("Failed to read from input file: {}", args.input))?;
     }
 
-    // Compile bf_script to bf code
-    let bf_code = compile_bf_script(&input_content).context("Failed to compile bf script")?;
+    // Compile brain_stem to bf code
+    let bf_code = compile_brain_stem(&input_content).context("Failed to compile bf script")?;
 
     // Write bf code to output
     if args.output == "-" {

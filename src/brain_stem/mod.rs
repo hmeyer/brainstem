@@ -2,11 +2,11 @@ mod ast;
 mod context;
 pub mod runtime;
 
-pub use runtime::compile_bf_script;
+pub use runtime::compile_brain_stem;
 
 use lalrpop_util::lalrpop_mod;
 
-lalrpop_mod!(parser, "/bf_script/bf_script.rs");
+lalrpop_mod!(parser, "/brain_stem/brain_stem.rs");
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,5 @@
-pub mod bf_script;
+pub mod brain_stem;
 pub mod bfi;
 
-pub use bf_script::compile_bf_script;
+pub use brain_stem::compile_brain_stem;
 pub use bfi::run_program_from_str;
