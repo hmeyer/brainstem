@@ -1,0 +1,13 @@
+// Hello, World! program in BrainStem
+
+var h[] = "Hello, World!";
+var i = 0;
+
+// Print each character of the string
+while i < 13 {
+    putc(h[i]);
+    i = i + 1;
+}
+
+// Print newline
+putc(10);

@@ -62,7 +62,7 @@ PopStackFrame();
 ### Basic Example
 ```
 var x = 5;
-putc('0' + x);  # Will print 5
+putc("0" + x);  # Will print 5
 ```
 
 ## Building and Usage
@@ -89,6 +89,26 @@ cargo run -- --input program.bs --output program.bf
 ```bash
 cargo run -- --input program.bs --run --int-type i32
 ```
+
+### Running Examples
+```bash
+# Run the hello world example
+cargo run -- --input examples/hello_world.bs --run
+
+# Run factorial example with larger integer type
+cargo run -- --input examples/factorial.bs --run --int-type i32
+```
+
+## Examples
+
+In the `examples` directory you'll find several BrainStem programs that demonstrate the language features:
+
+- **hello_world.bs**: Basic "Hello, World!" program
+- **factorial.bs**: Calculates factorial of a number
+- **fibonacci.bs**: Generates Fibonacci sequence
+- **number_printer.bs**: Recursive implementation of a decimal number printer
+
+These examples also serve as end-to-end tests for the compiler and runtime.
 
 ## Thalamus (TBD)
 

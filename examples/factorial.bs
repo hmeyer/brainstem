@@ -1,0 +1,16 @@
+// Factorial calculator
+
+var n = 5;  // Calculate factorial of 5
+var result = 1;
+var i = 1;
+
+// Calculate n!
+while i <= n {
+    result = result * i;
+    i = i + 1;
+}
+
+// Output result as digit (works for small factorials)
+putc("0" + result / 10);
+putc("0" + result % 10);
+putc(10); // newline

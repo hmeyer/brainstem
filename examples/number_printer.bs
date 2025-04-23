@@ -1,0 +1,24 @@
+// Recursive decimal number printer
+
+var n = 12345;  // The number to print
+var depth = 1;
+var base = 10;
+
+// Recursively print each digit
+while depth {
+    if n >= base then {
+        var q = n / base;
+        n = n % base;
+        PushStackFrame(n=q, depth=depth + 1);
+    } else {
+        putc("0" + n);
+        if depth > 1 then {
+            PopStackFrame();
+            depth = depth - 1;
+        } else {
+            depth = 0;
+        }
+    }
+}
+
+putc(10); // newline
