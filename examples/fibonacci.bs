@@ -26,7 +26,7 @@ while i < count {
         putc("0" + b / 10);
         putc("0" + b % 10);
     }
-    putc(' ');
+    putc(" ");
     
     i = i + 1;
 }

@@ -1,6 +1,6 @@
 // Factorial calculator
 
-var n = 5;  // Calculate factorial of 5
+var n = 4;  // Calculate factorial of 4
 var result = 1;
 var i = 1;
 

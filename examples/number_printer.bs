@@ -12,13 +12,9 @@ while depth {
         PushStackFrame(n=q, depth=depth + 1);
     } else {
         putc("0" + n);
-        if depth > 1 then {
+        if depth then {
             PopStackFrame();
-            depth = depth - 1;
-        } else {
-            depth = 0;
         }
     }
 }
-
-putc(10); // newline
+putc(10);  // newline
