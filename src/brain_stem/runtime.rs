@@ -747,23 +747,24 @@ impl Runtime {
             ast::Statement::While(cond, body) => {
                 // We do some extra hoops here, to only add the condition code once.
                 // See: https://esolangs.org/wiki/Brainfuck_algorithms#while_(x)_{_code_}
-                let zero = self.context.add_temp()?;
-                self.emitter.move_to(&zero)?;
-                self.emitter.add_code("[-]".into())?;
                 let t = self.context.add_temp()?;
                 self.emitter.move_to(&t)?;
                 self.emitter.add_code("[-]+[".into())?;
                 self.emitter.move_to(&t)?;
                 self.emitter.add_code("-".into())?;
+                let c = self.context.add_temp()?;
                 {
-                    let c = self.compile_expression(cond)?;
+                    let e = self.compile_expression(cond)?;
+                    let e = self.wrap_temp(e)?;
+                    bf!(&mut self.emitter; mv(e, c));
                     self.emitter.move_to(&c)?;
                 }
                 self.emitter.add_code("[".into())?;
                 self.compile(body)?;
                 self.emitter.move_to(&t)?;
                 self.emitter.add_code("+".into())?;
-                self.emitter.move_to(&zero)?;
+                self.emitter.move_to(&c)?;
+                self.emitter.add_code("[-]".into())?;
                 self.emitter.add_code("]".into())?;
                 self.emitter.move_to(&t)?;
                 self.emitter.add_code("]".into())?;
@@ -935,9 +936,14 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_lt() {
-        let bf_code =
-            compile_brain_stem(r#"putc("0" + (0 < 17));putc("0" + (3 < 2));putc("0" + (3 < 3));"#)
-                .unwrap();
+        let bf_code = compile_brain_stem(
+            r#"
+            putc("0" + (0 < 17));
+            putc("0" + (3 < 2));
+            putc("0" + (3 < 3));
+        "#,
+        )
+        .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "100");
     }
@@ -954,18 +960,20 @@ __temp1{6}>.
 
     #[test]
     fn test_end2end_eq() {
-        let bf_code =
-            compile_brain_stem(r#"putc("0" + (0 == 0));putc("0" + (3 == 3));putc("0" + (3 == 2));"#)
-                .unwrap();
+        let bf_code = compile_brain_stem(
+            r#"putc("0" + (0 == 0));putc("0" + (3 == 3));putc("0" + (3 == 2));"#,
+        )
+        .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "110");
     }
 
     #[test]
     fn test_end2end_ne() {
-        let bf_code =
-            compile_brain_stem(r#"putc("0" + (0 != 0));putc("0" + (3 != 3));putc("0" + (3 != 2));"#)
-                .unwrap();
+        let bf_code = compile_brain_stem(
+            r#"putc("0" + (0 != 0));putc("0" + (3 != 3));putc("0" + (3 != 2));"#,
+        )
+        .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "001");
     }
@@ -1038,6 +1046,38 @@ __temp1{6}>.
         .unwrap();
         let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
         assert_eq!(output, "987654321");
+    }
+
+    #[test]
+    fn test_end2end_while2() {
+        let bf_code = compile_brain_stem(
+            r#"
+                var x = 9;
+                while x > 0 {
+                    putc("0" + x);
+                    x = x - 1;
+                }
+            "#,
+        )
+        .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(10_000)).unwrap();
+        assert_eq!(output, "987654321");
+    }
+
+    #[test]
+    fn test_end2end_while3() {
+        let bf_code = compile_brain_stem(
+            r#"
+                var x = 0;
+                while x < 9 {
+                    putc("0" + x);
+                    x = x + 1;
+                }
+            "#,
+        )
+        .unwrap();
+        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "012345678");
     }
 
     #[test]

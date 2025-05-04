@@ -113,7 +113,11 @@ where
     let mut reader = Cursor::new(input.as_bytes());
     let mut output_buffer = Vec::new();
     let mut writer = Cursor::new(&mut output_buffer);
-    run_program::<T>(program, &mut reader, &mut writer, max_steps)?;
+    run_program::<T>(program, &mut reader, &mut writer, max_steps).map_err(|e| {
+        // Get any output that was produced before the error
+        let partial_output = output_buffer.iter().map(|&c| c as char).collect::<String>();
+        anyhow::anyhow!("Error: {}. Partial output: {}", e, partial_output)
+    })?;
     Ok(output_buffer.iter().map(|&c| c as char).collect::<String>())
 }
 

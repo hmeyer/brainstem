@@ -21,7 +21,7 @@ struct Args {
     input: String,
 
     /// Output bf code file (use - for stdout)
-    #[arg(short, long, default_value = "-")]
+    #[arg(short, long, default_value = "")]
     output: String,
 
     /// Run the generated bf code
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
         io::stdout()
             .write_all(bf_code.as_bytes())
             .context("Failed to write to stdout")?;
-    } else {
+    } else if !args.output.is_empty() {
         let mut file = File::create(&args.output)
             .with_context(|| format!("Failed to create output file: {}", args.output))?;
         file.write_all(bf_code.as_bytes())
@@ -85,26 +85,37 @@ fn main() -> Result<()> {
     // Run the bf code if requested
     if args.run {
         // Prepare input and output objects
-        let mut input: Box<dyn Read> = if args.run_input == "-" {
-            Box::new(io::stdin())
-        } else {
-            Box::new(File::open(&args.run_input)
-                .with_context(|| format!("Failed to open run input file: {}", args.run_input))?)
-        };
-        
+        let mut input: Box<dyn Read> =
+            if args.run_input == "-" {
+                Box::new(io::stdin())
+            } else {
+                Box::new(File::open(&args.run_input).with_context(|| {
+                    format!("Failed to open run input file: {}", args.run_input)
+                })?)
+            };
+
         let mut output: Box<dyn Write> = if args.run_output == "-" {
             Box::new(io::stdout())
         } else {
-            Box::new(File::create(&args.run_output)
-                .with_context(|| format!("Failed to create run output file: {}", args.run_output))?)
+            Box::new(File::create(&args.run_output).with_context(|| {
+                format!("Failed to create run output file: {}", args.run_output)
+            })?)
         };
-        
+
         // Run the program with the configured input/output and integer type
         let _steps = match args.int_type {
-            IntegerType::U8 => run_program::<u8>(&bf_code, &mut input, &mut output, args.max_steps)?,
-            IntegerType::I8 => run_program::<i8>(&bf_code, &mut input, &mut output, args.max_steps)?,
-            IntegerType::U32 => run_program::<u32>(&bf_code, &mut input, &mut output, args.max_steps)?,
-            IntegerType::I32 => run_program::<i32>(&bf_code, &mut input, &mut output, args.max_steps)?,
+            IntegerType::U8 => {
+                run_program::<u8>(&bf_code, &mut input, &mut output, args.max_steps)?
+            }
+            IntegerType::I8 => {
+                run_program::<i8>(&bf_code, &mut input, &mut output, args.max_steps)?
+            }
+            IntegerType::U32 => {
+                run_program::<u32>(&bf_code, &mut input, &mut output, args.max_steps)?
+            }
+            IntegerType::I32 => {
+                run_program::<i32>(&bf_code, &mut input, &mut output, args.max_steps)?
+            }
         };
     }
 
