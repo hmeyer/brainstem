@@ -1,14 +1,36 @@
 [package]
 name = "brainstem"
 version = "0.1.0"
-authors = ["Henning Meyer <tutmann@gmail.com>"]
 edition = "2024"
+description = "A Brainfuck compiler and interpreter library, with a BrainStem frontend language."
+license = "MIT"
+authors = ["Henning Meyer <tutmann@gmail.com>"]
+repository = "https://github.com/hmeyer/brainstem"
+homepage = "https://github.com/hmeyer/brainstem"
+documentation = "https://docs.rs/brainstem"
+readme = "README.md"
+categories = ["compilers", "parsing", "interpreters"]
+keywords = ["brainfuck", "compiler", "interpreter", "brainstem", "parser"]
 
 [dependencies]
 lalrpop-util = { version = "0.21.0", features = ["lexer", "unicode"] }
 anyhow = "1.0"
 num-traits = "0.2"
+clap = { version = "4.4", features = ["derive"], optional = true }
+
+[dev-dependencies]
 clap = { version = "4.4", features = ["derive"] }
 
 [build-dependencies]
 lalrpop = "0.22.1"
+
+[[bin]]
+name = "brainstem-bin"
+path = "src/main.rs"
+required-features = ["cli"]
+
+default-run = "brainstem-bin"
+
+[features]
+default = []
+cli = ["clap"]
