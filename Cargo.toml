@@ -9,7 +9,7 @@ repository = "https://github.com/hmeyer/brainstem"
 homepage = "https://github.com/hmeyer/brainstem"
 documentation = "https://docs.rs/brainstem"
 readme = "README.md"
-categories = ["compilers", "parsing", "interpreters"]
+categories = ["compilers", "parsing"]
 keywords = ["brainfuck", "compiler", "interpreter", "brainstem", "parser"]
 
 [dependencies]
