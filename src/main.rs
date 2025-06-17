@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use std::fs::File;
 use std::io::{self, Read, Write};
-use thalamus::{compile_brain_stem, run_program};
+use brainstem::{compile_brain_stem, run_program};
 
 #[derive(ValueEnum, Debug, Clone)]
 enum IntegerType {
@@ -12,7 +12,7 @@ enum IntegerType {
     I32,
 }
 
-/// Thalamus - A two-stage Brainfuck compiler (and minimal interpreter).
+/// BrainStem - A Brainfuck compiler (and minimal interpreter).
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {

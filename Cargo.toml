@@ -1,5 +1,5 @@
 [package]
-name = "thalamus"
+name = "brainstem"
 version = "0.1.0"
 authors = ["Henning Meyer <tutmann@gmail.com>"]
 edition = "2024"

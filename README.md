@@ -1,15 +1,15 @@
-# Thalamus
+# BrainStem
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A compiler and interpreter for Brainfuck and its high-level extensions, written in Rust.
+A compiler and interpreter for Brainfuck, written in Rust.
 
 ## Project Overview
 
-Thalamus is a two-stage compilation system:
+BrainStem is a compilation system:
 
 ```
-Thalamus (high level) -> BrainStem (low-level) → Brainfuck → (optional Brainfuck runtime)
+BrainStem (low-level language) → Brainfuck → (optional Brainfuck runtime)
 ```
 
 ## BrainStem Language
@@ -109,12 +109,6 @@ In the `examples` directory you'll find several BrainStem programs that demonstr
 - **number_printer.bs**: Recursive implementation of a decimal number printer
 
 These examples also serve as end-to-end tests for the compiler and runtime.
-
-## Thalamus (TBD)
-
-This is the name of the high level language and compiler.
-Thalamus adds features like function calls, an allocator and a lot of syntatic sugar.
-Thalamus gets compiled to BrainStem.
 
 ## License
 
