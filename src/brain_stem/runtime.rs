@@ -329,6 +329,133 @@ impl Runtime {
         index: &ast::Expression,
     ) -> Result<Rc<Variable>> {
         let result = self.context.add_temp()?;
+        // We shift the memory control block by one, b/c for reading we only need three elements.
+        let mem_control_block = mem_control_block.successor(1);
+        let memory_after = mem_control_block.successor(-1);
+        let data = mem_control_block.successor(0);
+        let index2 = mem_control_block.successor(1);
+        let index1 = mem_control_block.successor(2);
+        let memory_before = mem_control_block.successor(3);
+
+        // We use this structure to move into the memory:
+        // --> moving direction --> memory_after | data | index2 | index1 | memory_before
+        {
+            let index = self.compile_expression(index)?;
+            self.copy(&*index, &index1)?;
+            self.copy(&*index, &index2)?;
+        }
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head to array index".into())?;
+            bf!(&mut self.emitter;
+                index1[-
+                    mv(memory_before, data)
+                    mv(index1, memory_before)
+                    mv(index2, index1)
+                    index1
+                    >
+                ]
+            );
+        }
+        {
+            let _indent = self.emitter.add_indent_comment_newline(format!(
+                "copy {:?} to {:?} using {:?} (already zero) as temp",
+                memory_before, data, index1
+            ))?;
+            bf!(&mut self.emitter;
+                data[-]
+                memory_before[data+index1+memory_before-]
+                index1[memory_before+index1-]
+            );
+        }
+        // Now we move back:
+        //  <-- moving direction <-- more MEMORY | memory_after | data | index2 | index1 | memory_before | MEMORY
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head back".into())?;
+            bf!(&mut self.emitter;
+                index2[-
+                    mv(memory_after, index1)
+                    mv(data, memory_after)
+                    mv(index2, data)
+                    index2
+                    <
+                ]
+            );
+        }
+        self.copy(&data, &result)?;
+        Ok(result)
+    }
+
+    fn mem_write(
+        &mut self,
+        mem_control_block: Successor,
+        index: &ast::Expression,
+        value: &ast::Expression,
+    ) -> Result<Rc<Variable>> {
+        let memory_after = mem_control_block.successor(-1);
+        let space = mem_control_block.successor(0);
+        let data = mem_control_block.successor(1);
+        let index2 = mem_control_block.successor(2);
+        let index1 = mem_control_block.successor(3);
+        let memory_before = mem_control_block.successor(4);
+
+        let value = self.compile_expression(value)?;
+        // We use this structure to move into the memory:
+        //  --> moving direction --> memory_after | space | data | index2 | index1 | memory_before | MEMORY
+        self.copy(&value, &data)?;
+        {
+            let index = self.compile_expression(index)?;
+            self.copy(&index, &index1)?;
+            self.copy(&index, &index2)?;
+        }
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head to array index".into())?;
+            bf!(&mut self.emitter;
+                index1[-
+                    mv(memory_before, space)
+                    mv(index1, memory_before)
+                    mv(index2, index1)
+                    mv(data, index2)
+                    index1
+                    >
+                ]
+            );
+        }
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline(format!("move {:?} to {:?}", data, memory_before))?;
+            bf!(&mut self.emitter; mv(data, memory_before));
+        }
+        // Now we move back:
+        //  -> moving direction -> more MEMORY | memory_after | space | data | index2 | index1 | memory_before | MEMORY
+        {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("move head back".into())?;
+            bf!(&mut self.emitter;
+                index2[-
+                    mv(memory_after, index1)
+                    mv(index2, data)
+                    index2
+                    
+                ]
+            );
+        }
+        Ok(value)
+    }
+
+    fn mem_lookup_backwards(
+        &mut self,
+        mem_control_block: Successor,
+        index: &ast::Expression,
+    ) -> Result<Rc<Variable>> {
+        let result = self.context.add_temp()?;
 
         let memory_before = mem_control_block.successor(-1);
         let index1 = mem_control_block.successor(0);
@@ -388,7 +515,7 @@ impl Runtime {
         Ok(result)
     }
 
-    fn mem_write(
+    fn mem_write_backwards(
         &mut self,
         mem_control_block: Successor,
         index: &ast::Expression,
@@ -647,7 +774,7 @@ impl Runtime {
             }
             ast::Expression::ArrayLookup(name, index) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_lookup(array.successor((array.size() - 4) as isize), index)
+                self.mem_lookup(array.successor(0), index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
@@ -657,7 +784,7 @@ impl Runtime {
             }
             ast::Expression::ArrayAssignment(name, index, expr) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_write(array.successor((array.size() - 4) as isize), index, expr)
+                self.mem_write(array.successor(0), index, expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
@@ -666,7 +793,7 @@ impl Runtime {
                     ast::Opcode::Add,
                     Box::new(ast::Expression::Variable(STACKDEPTH)),
                 ));
-                self.mem_lookup(mem_control_block.successor(0), &adjusted_addr)
+                self.mem_lookup_backwards(mem_control_block.successor(0), &adjusted_addr)
             }
             ast::Expression::MemoryWrite(addr_expr, value_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
@@ -675,7 +802,7 @@ impl Runtime {
                     ast::Opcode::Add,
                     Box::new(ast::Expression::Variable(STACKDEPTH)),
                 ));
-                self.mem_write(mem_control_block.successor(0), &adjusted_addr, value_expr)
+                self.mem_write_backwards(mem_control_block.successor(0), &adjusted_addr, value_expr)
             }
         };
         self.emitter.newline();
@@ -698,7 +825,7 @@ impl Runtime {
                 let a = self.context.add_with_size(name, len + array_head_size)?;
                 for (i, expr) in init.iter().enumerate() {
                     let value = self.compile_expression(expr)?;
-                    let index = a.successor((len - 1 - i) as isize);
+                    let index = a.successor((array_head_size + i) as isize);
                     self.copy(&value, &index)?;
                 }
             }
