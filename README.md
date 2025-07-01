@@ -77,26 +77,26 @@ cargo build --release
 
 ### Running a BrainStem Program
 ```bash
-cargo run -- --input program.bs --run
+cargo run --features="cli" -- --input program.bs --run
 ```
 
 ### Compile Only (Output Brainfuck)
 ```bash
-cargo run -- --input program.bs --output program.bf
+cargo run --features="cli" -- --input program.bs --output program.bf
 ```
 
 ### Running with Different Integer Types
 ```bash
-cargo run -- --input program.bs --run --int-type i32
+cargo run --features="cli" -- --input program.bs --run --int-type i32
 ```
 
 ### Running Examples
 ```bash
 # Run the hello world example
-cargo run -- --input examples/hello_world.bs --run
+cargo run --features="cli" -- --input examples/hello_world.bs --run
 
 # Run factorial example with larger integer type
-cargo run -- --input examples/factorial.bs --run --int-type i32
+cargo run --features="cli" -- --input examples/factorial.bs --run --int-type i32
 ```
 
 ## Examples

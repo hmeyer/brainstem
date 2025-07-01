@@ -11,6 +11,7 @@ documentation = "https://docs.rs/brainstem"
 readme = "README.md"
 categories = ["compilers", "parsing"]
 keywords = ["brainfuck", "compiler", "interpreter", "brainstem", "parser"]
+default-run = "brainstem-bin"
 
 [dependencies]
 lalrpop-util = { version = "0.21.0", features = ["lexer", "unicode"] }
@@ -28,8 +29,6 @@ lalrpop = "0.22.1"
 name = "brainstem-bin"
 path = "src/main.rs"
 required-features = ["cli"]
-
-default-run = "brainstem-bin"
 
 [features]
 default = []
