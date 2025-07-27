@@ -323,7 +323,7 @@ impl Runtime {
         Ok(t)
     }
 
-    fn mem_lookup(
+    fn mem_lookup_forward(
         &mut self,
         mem_control_block: Successor,
         index: &ast::Expression,
@@ -389,7 +389,7 @@ impl Runtime {
         Ok(result)
     }
 
-    fn mem_write(
+    fn mem_write_forward(
         &mut self,
         mem_control_block: Successor,
         index: &ast::Expression,
@@ -450,7 +450,7 @@ impl Runtime {
         Ok(value)
     }
 
-    fn mem_lookup_backwards(
+    fn mem_lookup_backward(
         &mut self,
         mem_control_block: Successor,
         index: &ast::Expression,
@@ -515,7 +515,7 @@ impl Runtime {
         Ok(result)
     }
 
-    fn mem_write_backwards(
+    fn mem_write_backward(
         &mut self,
         mem_control_block: Successor,
         index: &ast::Expression,
@@ -660,7 +660,7 @@ impl Runtime {
                     bf!(&mut self.emitter;
                         z0[-]z4[-]z5[-]
                         n
-                        [>->+<[>]>[<+>-]<<[<]>-]
+                        [>>->>+<<[>>]>>[<<+>>-]<<<<[<<]>>-]
                         mv(r, x)
                         x
                     );
@@ -774,7 +774,7 @@ impl Runtime {
             }
             ast::Expression::ArrayLookup(name, index) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_lookup(array.successor(0), index)
+                self.mem_lookup_forward(array.successor(0), index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
@@ -784,7 +784,7 @@ impl Runtime {
             }
             ast::Expression::ArrayAssignment(name, index, expr) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_write(array.successor(0), index, expr)
+                self.mem_write_forward(array.successor(0), index, expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
@@ -793,7 +793,7 @@ impl Runtime {
                     ast::Opcode::Add,
                     Box::new(ast::Expression::Variable(STACKDEPTH)),
                 ));
-                self.mem_lookup_backwards(mem_control_block.successor(0), &adjusted_addr)
+                self.mem_lookup_backward(mem_control_block.successor(0), &adjusted_addr)
             }
             ast::Expression::MemoryWrite(addr_expr, value_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
@@ -802,7 +802,7 @@ impl Runtime {
                     ast::Opcode::Add,
                     Box::new(ast::Expression::Variable(STACKDEPTH)),
                 ));
-                self.mem_write_backwards(mem_control_block.successor(0), &adjusted_addr, value_expr)
+                self.mem_write_backward(mem_control_block.successor(0), &adjusted_addr, value_expr)
             }
         };
         self.emitter.newline();
@@ -980,8 +980,8 @@ mod tests {
             runtime.emitter.emit(0),
             "putc(3);
   3
-  creating literal 3 into __temp0{5}__temp0{5}>>>>>[-]+++
-__temp0{5}.
+  creating literal 3 into __temp0{10}__temp0{10}>>>>>>>>>>[-]+++
+__temp0{10}.
 "
         );
     }
@@ -996,9 +996,9 @@ __temp0{5}.
             "putc(!2);
   !2
     2
-    creating literal 2 into __temp0{5}__temp0{5}>>>>>[-]++
-  __temp1{6}>[-]+__temp0{5}<[__temp1{6}>-__temp0{5}<[-]]
-__temp1{6}>.
+    creating literal 2 into __temp0{10}__temp0{10}>>>>>>>>>>[-]++
+  __temp1{12}>>[-]+__temp0{10}<<[__temp1{12}>>-__temp0{10}<<[-]]
+__temp1{12}>>.
 "
         );
     }
@@ -1300,7 +1300,7 @@ __temp1{6}>.
         "#,
         )
         .unwrap();
-        assert_eq!(&bf_code[bf_code.len() - 8..bf_code.len()], "\n<<<<<<\n");
+        assert_eq!(&bf_code[bf_code.len() - 8..bf_code.len()], "<<<<<<<\n");
     }
 
     #[test]
