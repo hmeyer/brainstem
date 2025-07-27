@@ -443,7 +443,7 @@ impl Runtime {
                     mv(memory_after, index1)
                     mv(index2, data)
                     index2
-                    
+                    <
                 ]
             );
         }
@@ -1138,6 +1138,8 @@ __temp1{6}>.
         let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
         assert_eq!(output, "Hello Hello World World");
     }
+
+
 
     #[test]
     fn test_block_scope_simple() {
