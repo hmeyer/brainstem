@@ -7,6 +7,7 @@ use num_traits::{FromPrimitive, PrimInt, ToPrimitive, WrappingAdd, WrappingSub};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::io::{Cursor, Read, Write};
+use prettytable::{Table, Row, Cell, format};
 
 lalrpop_mod!(parser, "/bfi/bf.rs");
 
@@ -15,18 +16,27 @@ pub fn run_program<T>(
     input: &mut impl Read,
     output: &mut impl Write,
     max_steps: Option<usize>,
+    print_tape: bool,
 ) -> Result<usize>
 where
-    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug,
+    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug + std::fmt::Display,
 {
-    let ops = parser::ProgramParser::new()
+    let mut ops = parser::ProgramParser::new()
         .parse(program)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
+    
+    // Convert character positions to line numbers for PrintTape operations
+    for op in &mut ops {
+        if let ast::Op::PrintTape(char_pos) = op {
+            *char_pos = program[..*char_pos].chars().filter(|&c| c == '\n').count() + 1;
+        }
+    }
     let mut memory: HashMap<isize, T> = HashMap::new();
     let mut ip: usize = 0;
     let mut mp: isize = 0;
     let mut steps = 0;
     let zero = T::zero();
+    let mut lines_and_tape = Vec::new();  // for PrintTape operations
     while ip < ops.len() && (max_steps.is_none() || steps < max_steps.unwrap()) {
         let op = &ops[ip];
         ip += 1;
@@ -94,10 +104,33 @@ where
             Op::SetToZero => {
                 memory.insert(mp, T::zero());
             }
+            Op::PrintTape(line) => {
+                if print_tape {
+                    lines_and_tape.push((*line, memory.clone()));
+                }
+            }
         }
     }
     if ip < ops.len() {
         return Err(anyhow::anyhow!("max_steps {} exceeded", steps));
+    }
+    if print_tape {
+        let min_index = *lines_and_tape.iter().map(|(_, tape)| tape.keys().min()).flatten().min().unwrap_or(&0);
+        let max_index = *lines_and_tape.iter().map(|(_, tape)| tape.keys().max()).flatten().max().unwrap_or(&0);
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
+        table.set_titles(Row::new(["line\\index".to_string()].into_iter().chain((min_index..=max_index).map(|i| i.to_string())).map(|s| Cell::new(&s)).collect()));
+        for (line, tape) in lines_and_tape {
+            table.add_row(Row::new(
+                [line.to_string()]
+                .into_iter()
+                .chain((min_index..=max_index).map(|i| {
+                    tape.get(&i).map_or(String::new(), |v| v.to_string())
+                })).map(|s| Cell::new(&s))
+                .collect(),
+            ));
+        }
+        println!("{}",table);
     }
     Ok(steps)
 }
@@ -108,12 +141,31 @@ pub fn run_program_from_str<T>(
     max_steps: Option<usize>,
 ) -> Result<String>
 where
-    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug,
+    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug + std::fmt::Display,
 {
     let mut reader = Cursor::new(input.as_bytes());
     let mut output_buffer = Vec::new();
     let mut writer = Cursor::new(&mut output_buffer);
-    run_program::<T>(program, &mut reader, &mut writer, max_steps).map_err(|e| {
+    run_program::<T>(program, &mut reader, &mut writer, max_steps, false).map_err(|e| {
+        // Get any output that was produced before the error
+        let partial_output = output_buffer.iter().map(|&c| c as char).collect::<String>();
+        anyhow::anyhow!("Error: {}. Partial output: {}", e, partial_output)
+    })?;
+    Ok(output_buffer.iter().map(|&c| c as char).collect::<String>())
+}
+
+pub fn debug_program_from_str<T>(
+    program: &str,
+    input: &str,
+    max_steps: Option<usize>,
+) -> Result<String>
+where
+    T: PrimInt + FromPrimitive + ToPrimitive + WrappingSub + WrappingAdd + Debug + std::fmt::Display,
+{
+    let mut reader = Cursor::new(input.as_bytes());
+    let mut output_buffer = Vec::new();
+    let mut writer = Cursor::new(&mut output_buffer);
+    run_program::<T>(program, &mut reader, &mut writer, max_steps, true).map_err(|e| {
         // Get any output that was produced before the error
         let partial_output = output_buffer.iter().map(|&c| c as char).collect::<String>();
         anyhow::anyhow!("Error: {}. Partial output: {}", e, partial_output)
@@ -123,7 +175,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::bfi::run_program_from_str;
+    use crate::bfi::debug_program_from_str;
 
     use super::parser::ProgramParser;
     use super::run_program;
@@ -248,11 +300,7 @@ mod tests {
                 "{:?}",
                 ProgramParser::new()
                     .parse(
-                        "This is a comment Then move right >
-            then a line break: left: <
-            + & -
-            zero:[With-Comments]
-            done"
+                        "This is a comment Then move right > left: < + & - zero:[With-Comments] done"
                     )
                     .unwrap()
             ),
@@ -262,12 +310,12 @@ mod tests {
 
     #[test]
     fn run_hello_world() {
-        assert_eq!(run_program_from_str::<i32>("++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.", "", Some(1000)).unwrap(), "Hello World!\n");
+        assert_eq!(debug_program_from_str::<i32>("++++++++++[>+++++++>++++++++++>+++>+<<<<-]>++.>+.+++++++..+++.>++.<<+++++++++++++++.>.+++.------.--------.>+.>.", "", Some(1000)).unwrap(), "Hello World!\n");
     }
 
     #[test]
     fn run_rot13() {
-        assert_eq!(run_program_from_str::<i32>(r"#
+        assert_eq!(debug_program_from_str::<i32>(r"#
 From: Wikipedia/Brainfuck
 -,+[                         Read first character and start outer character reading loop
     -[                       Skip forward if character is 0
@@ -303,7 +351,7 @@ From: Wikipedia/Brainfuck
     #[test]
     fn run_with_parse_error() {
         assert!(
-            run_program::<i32>("[", &mut std::io::empty(), &mut std::io::empty(), None).is_err()
+            run_program::<i32>("[", &mut std::io::empty(), &mut std::io::empty(), None, true).is_err()
         );
     }
 }

@@ -183,6 +183,7 @@ macro_rules! bf {
     ($emitter:expr; $($rest:tt)*) => {
             let mut emitter=$emitter;
             bf_impl!(&mut emitter; $($rest)*);
+            $emitter.newline();
     };
 }
 
@@ -330,16 +331,33 @@ impl Runtime {
     ) -> Result<Rc<Variable>> {
         let result = self.context.add_temp()?;
         // We shift the memory control block by one, b/c for reading we only need three elements.
-        let mem_control_block = mem_control_block.successor(1);
-        let memory_after = mem_control_block.successor(-1);
-        let data = mem_control_block.successor(0);
-        let index2 = mem_control_block.successor(1);
-        let index1 = mem_control_block.successor(2);
-        let memory_before = mem_control_block.successor(3);
+        let memory_after = mem_control_block.named_raw_successor(0, "memory_after".into());
+        let data = mem_control_block.named_raw_successor(1, "data".into());
+        let index2 = mem_control_block.named_raw_successor(2, "index2".into());
+        let index1 = mem_control_block.named_raw_successor(3, "index1".into());
+        let memory_before = mem_control_block.named_raw_successor(4, "memory_before".into());
+
+        let data_backup = self.context.add_temp()?;
+        let index1_backup = self.context.add_temp()?;
+        {
+            // data and index1 are now pointing to the heap (odd addresses). Save them to restore them later.
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("save data and index1".into())?;
+            bf!(&mut self.emitter;
+                mv(data, data_backup)
+                mv(index1, index1_backup)
+            );
+        }
+
+
 
         // We use this structure to move into the memory:
         // --> moving direction --> memory_after | data | index2 | index1 | memory_before
         {
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("evaluate index and copy it to index1 and index2".into())?;
             let index = self.compile_expression(index)?;
             self.copy(&*index, &index1)?;
             self.copy(&*index, &index2)?;
@@ -386,6 +404,16 @@ impl Runtime {
             );
         }
         self.copy(&data, &result)?;
+        {
+            // Restore data and index1's original value.
+            let _indent = self
+                .emitter
+                .add_indent_comment_newline("restore data and index1".into())?;
+            bf!(&mut self.emitter;
+                mv(data_backup, data)
+                mv(index1_backup, index1)
+            );
+        }
         Ok(result)
     }
 
@@ -395,12 +423,23 @@ impl Runtime {
         index: &ast::Expression,
         value: &ast::Expression,
     ) -> Result<Rc<Variable>> {
-        let memory_after = mem_control_block.successor(-1);
+        let memory_after = mem_control_block.raw_successor(-1);
         let space = mem_control_block.successor(0);
-        let data = mem_control_block.successor(1);
-        let index2 = mem_control_block.successor(2);
-        let index1 = mem_control_block.successor(3);
-        let memory_before = mem_control_block.successor(4);
+        let data_saver = self.context.add_temp()?;
+
+        let data = mem_control_block.raw_successor(1);
+        let index2 = mem_control_block.successor(1);
+        let index1_saver = self.context.add_temp()?;
+        let index1 = mem_control_block.raw_successor(3);
+        let memory_before = mem_control_block.raw_successor(4);
+
+        // Save data and index1 to restore them later.
+        bf!(&mut self.emitter;
+            data_saver[-]
+            mv(data, data_saver)
+            index1_saver[-]
+            mv(index1, index1_saver)
+        );
 
         let value = self.compile_expression(value)?;
         // We use this structure to move into the memory:
@@ -447,6 +486,15 @@ impl Runtime {
                 ]
             );
         }
+
+        // Restore data and index1 to their original values.
+        bf!(&mut self.emitter;
+            data[-]
+            mv(data_saver, data)
+            index1[-]
+            mv(index1_saver, index1)
+        );
+
         Ok(value)
     }
 
@@ -774,7 +822,13 @@ impl Runtime {
             }
             ast::Expression::ArrayLookup(name, index) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_lookup_forward(array.successor(0), index)
+                // multiply index by 2, b/c the stack is on even addresses.
+                let index = ast::Expression::Binary(
+                    index.clone(),
+                    ast::Opcode::Mul,
+                    Box::new(ast::Expression::Literal(2)),
+                );
+                self.mem_lookup_forward(array.successor(0), &index)
             }
             ast::Expression::Assignment(name, expr) => {
                 let x = self.compile_expression(expr)?;
@@ -784,7 +838,13 @@ impl Runtime {
             }
             ast::Expression::ArrayAssignment(name, index, expr) => {
                 let array = self.context.borrow().get_variable(name)?;
-                self.mem_write_forward(array.successor(0), index, expr)
+                // multiply index by 2, b/c the stack is on even addresses.
+                let index = ast::Expression::Binary(
+                    index.clone(),
+                    ast::Opcode::Mul,
+                    Box::new(ast::Expression::Literal(2)),
+                );
+                self.mem_write_forward(array.successor(0), &index, expr)
             }
             ast::Expression::MemoryRead(addr_expr) => {
                 let mem_control_block = self.context.borrow().get_variable(LINMEM)?;
@@ -820,7 +880,7 @@ impl Runtime {
                 self.copy(&init, &v)?;
             }
             ast::Statement::ArrayDeclaration(name, init) => {
-                let array_head_size = 4;
+                let array_head_size = 2;  // We need two positions on the stack and will grab another two from the heap on use.
                 let len = init.len();
                 let a = self.context.add_with_size(name, len + array_head_size)?;
                 for (i, expr) in init.iter().enumerate() {
@@ -969,7 +1029,7 @@ pub fn compile_brain_stem(program: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bfi::run_program_from_str;
+    use crate::bfi::{debug_program_from_str, run_program_from_str};
 
     #[test]
     fn test_putc_literal() {
@@ -998,6 +1058,7 @@ __temp0{10}.
     2
     creating literal 2 into __temp0{10}__temp0{10}>>>>>>>>>>[-]++
   __temp1{12}>>[-]+__temp0{10}<<[__temp1{12}>>-__temp0{10}<<[-]]
+
 __temp1{12}>>.
 "
         );
@@ -1114,14 +1175,23 @@ __temp1{12}>>.
     }
 
     #[test]
-    fn test_end2end_array_simple() {
-        let bf_code = compile_brain_stem(r#"var s[] = [7]; putc("0" + s[0]);"#).unwrap();
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
-        assert_eq!(output, "7");
+    fn test_end2end_array_read() {
+        let bf_code = compile_brain_stem(r#"var s[] = [7, 9]; putc("0" + s[1]);"#).unwrap();
+        println!("{}", bf_code);
+        let output = debug_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "9");
     }
 
     #[test]
-    fn test_end2end_array() {
+    fn test_end2end_array_write_read() {
+        let bf_code = compile_brain_stem(r#"var s[] = [7, 9]; s[1] = 8; putc("0" + s[1]);"#).unwrap();
+        println!("{}", bf_code);
+        let output = debug_program_from_str::<u32>(&bf_code, "", Some(100_000)).unwrap();
+        assert_eq!(output, "8");
+    }
+
+    #[test]
+    fn test_end2end_array_complex() {
         let bf_code = compile_brain_stem(
             r#"
             var s[] = "Hello "; 
@@ -1135,11 +1205,9 @@ __temp1{12}>>.
         )
         .unwrap();
         println!("{}", bf_code);
-        let output = run_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
+        let output = debug_program_from_str::<u32>(&bf_code, "", Some(1_000_000)).unwrap();
         assert_eq!(output, "Hello Hello World World");
     }
-
-
 
     #[test]
     fn test_block_scope_simple() {

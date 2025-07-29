@@ -12,6 +12,7 @@ Terminal: Op = {
     "]" => Op::JumpBack(0),
     "," => Op::Read,
     "." => Op::Write,
+    <l:@L> "\n" => Op::PrintTape(l),
 };
 
 pub Program : Vec<Op> = {
@@ -31,5 +32,6 @@ match {
     "]",
     ",",
     ".",
-    r"[^<>\+\-\[\]\,\.]*" => { },  // Ignore any non-bf characters.
+    "\n",
+    r"[^<>\+\-\[\]\,\.\n]*" => { },  // Ignore any non-bf characters except newlines.
 }

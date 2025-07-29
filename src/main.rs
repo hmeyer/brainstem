@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
+use brainstem::{compile_brain_stem, run_program};
 use clap::{Parser, ValueEnum};
 use std::fs::File;
 use std::io::{self, Read, Write};
-use brainstem::{compile_brain_stem, run_program};
 
 #[derive(ValueEnum, Debug, Clone)]
 enum IntegerType {

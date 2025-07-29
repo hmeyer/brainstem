@@ -69,6 +69,9 @@ impl Drop for Variable {
 
 pub trait VariableExt {
     fn successor(&self, offset: isize) -> Successor;
+    fn raw_successor(&self, offset: isize) -> Successor;
+    fn named_successor(&self, offset: isize, name: String) -> Successor;
+    fn named_raw_successor(&self, offset: isize, name: String) -> Successor;
     fn size(&self) -> usize;
     fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame;
     fn in_stackframe_below(&self) -> VariableInAdjacentStackFrame;
@@ -79,6 +82,28 @@ impl VariableExt for Rc<Variable> {
         Successor {
             original: self.clone(),
             offset: offset * 2,
+            name: format!("Successor({};{}{})", self.name, if offset<0 {"neg"} else {""}, 2 * offset.abs()),
+        }
+    }
+    fn raw_successor(&self, offset: isize) -> Successor {
+        Successor {
+            original: self.clone(),
+            offset,
+            name: format!("Successor({};{}{})", self.name, if offset<0 {"neg"} else {""}, offset.abs()),
+        }
+    }
+    fn named_successor(&self, offset: isize, name: String) -> Successor {
+        Successor {
+            original: self.clone(),
+            offset: offset * 2,
+            name
+        }
+    }
+    fn named_raw_successor(&self, offset: isize, name: String) -> Successor {
+        Successor {
+            original: self.clone(),
+            offset,
+            name,
         }
     }
     fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame {
@@ -101,6 +126,7 @@ impl VariableExt for Rc<Variable> {
 pub struct Successor {
     original: Rc<Variable>,
     offset: isize,
+    name: String,
 }
 
 impl VariableExt for Successor {
@@ -108,6 +134,28 @@ impl VariableExt for Successor {
         Successor {
             original: self.original.clone(),
             offset: self.offset + (offset * 2),
+            name: format!("Successor({};{}{})", self.name, if offset<0 {"neg"} else {""}, 2 * offset.abs()),
+        }
+    }
+    fn raw_successor(&self, offset: isize) -> Successor {
+        Successor {
+            original: self.original.clone(),
+            offset: self.offset + offset,
+            name: format!("Successor({};{}{})", self.name, if offset<0 {"neg"} else {""}, offset.abs()),
+        }
+    }
+    fn named_successor(&self, offset: isize, name: String) -> Successor {
+        Successor {
+            original: self.original.clone(),
+            offset: self.offset + (offset * 2),
+            name,
+        }
+    }
+    fn named_raw_successor(&self, offset: isize, name: String) -> Successor {
+        Successor {
+            original: self.original.clone(),
+            offset: self.offset + offset,
+            name,
         }
     }
     fn in_stackframe_above(&self) -> VariableInAdjacentStackFrame {
@@ -129,14 +177,7 @@ impl VariableExt for Successor {
 
 impl Debug for Successor {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
-        let neg = if self.offset < 0 { "neg" } else { "" };
-        write!(
-            fmt,
-            "Successor({:?}; {}{})",
-            self.original,
-            neg,
-            self.offset.abs()
-        )
+        write!(fmt, "{}{{{}}}", self.name, self.original.address + self.offset)
     }
 }
 
@@ -287,7 +328,8 @@ impl Context {
                 });
                 entry.insert(Rc::downgrade(&variable));
                 for i in 0..size {
-                    ctx.used_addresses.insert(variable.address + (i as isize * 2));
+                    ctx.used_addresses
+                        .insert(variable.address + (i as isize * 2));
                 }
                 variable
             }
@@ -313,43 +355,35 @@ impl Context {
 
     fn find_next_free(&self, size: usize) -> isize {
         let top_address = self.used_addresses.iter().max().map_or(0, |&x| x + 2);
-        // Ensure we start at an even address
-        let mut address = if top_address % 2 == 0 { top_address } else { top_address + 1 };
-        
-        // Start from 0 if no addresses are used yet
-        if self.used_addresses.is_empty() {
-            address = 0;
-        }
-        
-        while address < top_address || self.used_addresses.is_empty() {
+        let mut address = 0;
+
+        while address < top_address {
             let mut is_free = true;
             for i in 0..size {
                 // Check every even address (size * 2 spacing)
                 if self.used_addresses.contains(&(address + (i as isize * 2))) {
                     is_free = false;
-                    address += 2; // Move to next even address
+                    address += (i as isize + 1) * 2; // Move to next even address
                     break;
                 }
             }
             if is_free {
                 return address;
             }
-            if self.used_addresses.is_empty() {
-                break;
-            }
         }
-        // Ensure returned address is even
-        if address % 2 == 0 { address } else { address + 1 }
+        assert_eq!(address % 2, 0, "address should be even");
+        address
     }
 
     pub fn next_adress_after_top(&self) -> usize {
-        let next = self.used_addresses
+        let next = self
+            .used_addresses
             .iter()
             .filter(|&&x| x >= 0)
             .max()
             .map_or(0, |&x| x as usize + 2);
-        // Ensure even address
-        if next % 2 == 0 { next } else { next + 1 }
+        assert_eq!(next % 2, 0, "next should be even");
+        next
     }
 
     // TODO: This should also work with &str.
@@ -424,12 +458,27 @@ mod tests {
         let var1 = ctx.add("var1").unwrap();
         let var2 = ctx.add("var2").unwrap();
         let var3 = ctx.add_with_size("var3", 3).unwrap();
-        
+
         // All addresses should be even
-        assert_eq!(var1.address % 2, 0, "var1 address should be even: {}", var1.address);
-        assert_eq!(var2.address % 2, 0, "var2 address should be even: {}", var2.address);
-        assert_eq!(var3.address % 2, 0, "var3 address should be even: {}", var3.address);
-        
+        assert_eq!(
+            var1.address % 2,
+            0,
+            "var1 address should be even: {}",
+            var1.address
+        );
+        assert_eq!(
+            var2.address % 2,
+            0,
+            "var2 address should be even: {}",
+            var2.address
+        );
+        assert_eq!(
+            var3.address % 2,
+            0,
+            "var3 address should be even: {}",
+            var3.address
+        );
+
         // Addresses should be spaced by at least 2
         assert!(var2.address >= var1.address + 2);
         assert!(var3.address >= var2.address + 2);
@@ -439,19 +488,34 @@ mod tests {
     fn test_successor_even_addresses() {
         let ctx = Context::new();
         let var = ctx.add("var").unwrap();
-        
+
         // Base address should be even
         assert_eq!(var.address % 2, 0);
-        
+
         // Successors should also be even
         let succ1 = var.successor(1);
         let succ2 = var.successor(2);
         let succ3 = var.successor(-1);
-        
-        assert_eq!(succ1.address() % 2, 0, "successor(1) should have even address: {}", succ1.address());
-        assert_eq!(succ2.address() % 2, 0, "successor(2) should have even address: {}", succ2.address());
-        assert_eq!(succ3.address() % 2, 0, "successor(-1) should have even address: {}", succ3.address());
-        
+
+        assert_eq!(
+            succ1.address() % 2,
+            0,
+            "successor(1) should have even address: {}",
+            succ1.address()
+        );
+        assert_eq!(
+            succ2.address() % 2,
+            0,
+            "successor(2) should have even address: {}",
+            succ2.address()
+        );
+        assert_eq!(
+            succ3.address() % 2,
+            0,
+            "successor(-1) should have even address: {}",
+            succ3.address()
+        );
+
         // Verify offset multiplication
         assert_eq!(succ1.address(), var.address + 2);
         assert_eq!(succ2.address(), var.address + 4);
@@ -462,9 +526,48 @@ mod tests {
     fn test_chained_successors() {
         let ctx = Context::new();
         let var = ctx.add("var").unwrap();
-        
+
         let succ = var.successor(1).successor(1);
-        assert_eq!(succ.address() % 2, 0, "chained successor should have even address");
+        assert_eq!(
+            succ.address() % 2,
+            0,
+            "chained successor should have even address"
+        );
         assert_eq!(succ.address(), var.address + 4); // 2 + 2 = 4
+    }
+
+    #[test]
+    fn test_odd_successor() {
+        let ctx = Context::new();
+        let var = ctx.add("var").unwrap();
+
+        // Base address should be even
+        assert_eq!(var.address % 2, 0);
+
+        // Odd successors should point to addresses with no multiplication by 2
+        let odd_succ1 = var.raw_successor(1);
+        let odd_succ2 = var.raw_successor(2);
+        let odd_succ3 = var.raw_successor(-1);
+
+        // Verify no offset multiplication
+        assert_eq!(odd_succ1.address(), var.address + 1);
+        assert_eq!(odd_succ2.address(), var.address + 2);
+        assert_eq!(odd_succ3.address(), var.address - 1);
+
+        // Check that odd_successor gives us access to odd addresses when needed
+        assert_eq!(
+            odd_succ1.address() % 2,
+            1,
+            "odd_successor(1) should give odd address: {}",
+            odd_succ1.address()
+        );
+        assert_eq!(
+            odd_succ2.address() % 2,
+            0,
+            "odd_successor(2) should give even address: {}",
+            odd_succ2.address()
+        );
+        // For negative addresses, the modulo behavior varies, so we just check the offset
+        assert_eq!(odd_succ3.address(), var.address - 1);
     }
 }

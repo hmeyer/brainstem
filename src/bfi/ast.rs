@@ -1,5 +1,5 @@
 /// Basic Brainfuck Operations.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Op {
     /// Move the pointer to the right by n cells - corresponds to '>' and '<'.
     MovePointer(isize),
@@ -15,6 +15,8 @@ pub enum Op {
     Write,
     /// Set the value at the current cell to zero - corresponds to '[-]'.
     SetToZero,
+    /// Print the contents of the tape - used for debugging.
+    PrintTape(usize),
 }
 
 /// Compact the program by combining consecutive MovePointer and Increment operations.

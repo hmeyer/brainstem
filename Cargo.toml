@@ -18,6 +18,7 @@ lalrpop-util = { version = "0.21.0", features = ["lexer", "unicode"] }
 anyhow = "1.0"
 num-traits = "0.2"
 clap = { version = "4.4", features = ["derive"], optional = true }
+prettytable = { version = "0.10" }
 
 [dev-dependencies]
 clap = { version = "4.4", features = ["derive"] }
