@@ -423,15 +423,15 @@ impl Runtime {
         index: &ast::Expression,
         value: &ast::Expression,
     ) -> Result<Rc<Variable>> {
-        let memory_after = mem_control_block.raw_successor(-1);
-        let space = mem_control_block.successor(0);
+        let memory_after = mem_control_block.named_raw_successor(-1, "memory_after".into());
+        let space = mem_control_block.named_raw_successor(0, "space".into());
         let data_saver = self.context.add_temp()?;
 
-        let data = mem_control_block.raw_successor(1);
-        let index2 = mem_control_block.successor(1);
+        let data = mem_control_block.named_raw_successor(1, "data".into());
+        let index2 = mem_control_block.named_raw_successor(2, "index2".into());
         let index1_saver = self.context.add_temp()?;
-        let index1 = mem_control_block.raw_successor(3);
-        let memory_before = mem_control_block.raw_successor(4);
+        let index1 = mem_control_block.named_raw_successor(3, "index1".into());
+        let memory_before = mem_control_block.named_raw_successor(4, "memory_before".into());
 
         // Save data and index1 to restore them later.
         bf!(&mut self.emitter;
