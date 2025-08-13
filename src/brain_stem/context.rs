@@ -131,17 +131,13 @@ pub struct Successor {
 
 impl VariableExt for Successor {
     fn successor(&self, offset: isize) -> Successor {
-        Successor {
-            original: self.original.clone(),
-            offset: self.offset + (offset * 2),
-            name: format!("Successor({};{}{})", self.name, if offset<0 {"neg"} else {""}, 2 * offset.abs()),
-        }
+        Successor::raw_successor(&self, 2 * offset)
     }
     fn raw_successor(&self, offset: isize) -> Successor {
         Successor {
             original: self.original.clone(),
             offset: self.offset + offset,
-            name: format!("Successor({};{}{})", self.name, if offset<0 {"neg"} else {""}, offset.abs()),
+            name: String::new(),
         }
     }
     fn named_successor(&self, offset: isize, name: String) -> Successor {
@@ -177,7 +173,11 @@ impl VariableExt for Successor {
 
 impl Debug for Successor {
     fn fmt(&self, fmt: &mut Formatter<'_>) -> Result<(), Error> {
-        write!(fmt, "{}{{{}}}", self.name, self.original.address + self.offset)
+        let mut maybe_name = String::new();
+        if !self.name.is_empty() {
+            maybe_name = format!("{{{}}}", self.name);
+        }
+        write!(fmt, "Successor{}({:?};{}{})", maybe_name, self.original, if self.offset < 0 { "neg" } else { "" }, self.offset.abs())
     }
 }
 
